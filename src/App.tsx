@@ -54,9 +54,6 @@ export default function App() {
   const stats = useMemo(() => {
     const countries = new Set<string>();
     const regions = new Set<string>();
-    let logos = 0;
-    let geocoded = 0;
-    let approximate = 0;
 
     positionedTeams.forEach((team) => {
       if (team.location.country) {
@@ -66,26 +63,11 @@ export default function App() {
       if (team.location.country && team.location.state) {
         regions.add(`${team.location.country}:${team.location.state}`);
       }
-
-      if (team.logoUrl) {
-        logos += 1;
-      }
-
-      if (team.locationPrecision === "geocoded") {
-        geocoded += 1;
-      }
-
-      if (team.locationPrecision === "country") {
-        approximate += 1;
-      }
     });
 
     return {
       countries: countries.size,
       regions: regions.size,
-      logos,
-      geocoded,
-      approximate,
     };
   }, [positionedTeams]);
 
@@ -117,7 +99,7 @@ export default function App() {
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-6 lg:min-w-[50rem]">
+          <div className="grid grid-cols-3 gap-3 lg:min-w-[30rem]">
             <StatCard
               label={season ? `${season} teams` : "Teams"}
               value={
@@ -128,9 +110,6 @@ export default function App() {
             />
             <StatCard label="Countries" value={formatStat(stats.countries)} />
             <StatCard label="Regions" value={formatStat(stats.regions)} />
-            <StatCard label="Geocoded" value={formatStat(stats.geocoded)} />
-            <StatCard label="Logos" value={formatStat(stats.logos)} />
-            <StatCard label="Approx." value={formatStat(stats.approximate)} />
           </div>
         </header>
 
@@ -157,11 +136,20 @@ export default function App() {
                 any logo URL fields available in the cache.
               </InfoPanel>
               <InfoPanel title="Location precision">
-                FTCScout and official FTC Events data expose city, state, and
-                country text but no latitude or longitude. If generated
-                geocodes are present, markers use those city-level coordinates;
-                otherwise they fall back to regional or country centroids.
+                Markers use generated coordinates from each team&apos;s city,
+                state, and country. Teams without generated coordinates are not
+                shown on the map instead of being placed at a misleading
+                regional estimate.
               </InfoPanel>
+              {loadState.status === "ready" && positionedTeams.length === 0 ? (
+                <div className="rounded-2xl border border-amber-300/20 bg-amber-300/10 p-4 text-sm leading-6 text-amber-100">
+                  No teams have generated coordinates yet. Run{" "}
+                  <code className="rounded bg-black/20 px-1.5 py-0.5">
+                    npm run sync:geocodes
+                  </code>{" "}
+                  to convert city, state, and country locations into map points.
+                </div>
+              ) : null}
               {isRestFallback ? (
                 <div className="rounded-2xl border border-amber-300/20 bg-amber-300/10 p-4 text-sm leading-6 text-amber-100">
                   Active-season filtering is estimated from current-season
