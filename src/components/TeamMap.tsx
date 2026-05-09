@@ -9,6 +9,10 @@ type TeamMapProps = {
   teams: PositionedTeam[];
 };
 
+type TeamMarker = L.Marker & {
+  team?: PositionedTeam;
+};
+
 export default function TeamMap({ teams }: TeamMapProps) {
   return (
     <MapContainer
@@ -52,17 +56,19 @@ function TeamMarkerLayer({ teams }: TeamMapProps) {
   useEffect(() => {
     const layer = L.markerClusterGroup({
       chunkedLoading: true,
-      maxClusterRadius: 44,
+      maxClusterRadius: getClusterRadius,
       showCoverageOnHover: false,
       spiderfyOnMaxZoom: true,
-      iconCreateFunction: createClusterIcon,
+      iconCreateFunction: (cluster) => createClusterIcon(cluster, map.getZoom()),
     }).addTo(map);
 
     teams.forEach((team) => {
       const marker = L.marker(team.position, {
         icon: createTeamIcon(team),
         title: `${team.number} ${team.name}`,
-      });
+      }) as TeamMarker;
+
+      marker.team = team;
 
       marker.bindPopup(() => renderTeamPopup(team), {
         className: "team-popup",
@@ -103,8 +109,25 @@ function createTeamIcon(team: PositionedTeam) {
   });
 }
 
-function createClusterIcon(cluster: L.MarkerCluster) {
+function getClusterRadius(zoom: number) {
+  if (zoom <= 3) {
+    return 88;
+  }
+
+  if (zoom <= 5) {
+    return 68;
+  }
+
+  if (zoom <= 7) {
+    return 50;
+  }
+
+  return 34;
+}
+
+function createClusterIcon(cluster: L.MarkerCluster, zoom: number) {
   const count = cluster.getChildCount();
+  const summary = getClusterSummary(cluster, zoom);
   const sizeClass =
     count >= 1000
       ? "team-cluster--xl"
@@ -116,10 +139,91 @@ function createClusterIcon(cluster: L.MarkerCluster) {
 
   return L.divIcon({
     className: "team-cluster-icon",
-    html: `<div class="team-cluster ${sizeClass}"><span>${count.toLocaleString()}</span></div>`,
-    iconSize: [54, 54],
-    iconAnchor: [27, 27],
+    html: `<div class="team-cluster ${sizeClass} team-cluster--${summary.level}"><span class="team-cluster-count">${count.toLocaleString()}</span><span class="team-cluster-label">${escapeHtml(summary.label)}</span></div>`,
+    iconSize: [72, 72],
+    iconAnchor: [36, 36],
   });
+}
+
+function getClusterSummary(cluster: L.MarkerCluster, zoom: number) {
+  const level = getClusterLevel(zoom);
+  const teams = cluster
+    .getAllChildMarkers()
+    .map((marker) => (marker as TeamMarker).team)
+    .filter((team): team is PositionedTeam => Boolean(team));
+  const values = teams
+    .map((team) => getClusterLocationValue(team, level))
+    .filter(Boolean);
+  const fallbackLabel = getClusterFallbackLabel(level);
+
+  if (values.length === 0) {
+    return { level, label: fallbackLabel };
+  }
+
+  const valueCounts = new Map<string, number>();
+
+  values.forEach((value) => {
+    valueCounts.set(value, (valueCounts.get(value) ?? 0) + 1);
+  });
+
+  const [mostCommonValue, mostCommonCount] = [...valueCounts.entries()].sort(
+    ([, leftCount], [, rightCount]) => rightCount - leftCount,
+  )[0];
+
+  if (valueCounts.size === 1) {
+    return { level, label: mostCommonValue };
+  }
+
+  if (mostCommonCount / values.length >= 0.7) {
+    return { level, label: `${mostCommonValue}+` };
+  }
+
+  return { level, label: fallbackLabel };
+}
+
+function getClusterLevel(zoom: number) {
+  if (zoom <= 3) {
+    return "country";
+  }
+
+  if (zoom <= 5) {
+    return "state";
+  }
+
+  if (zoom <= 7) {
+    return "area";
+  }
+
+  return "city";
+}
+
+function getClusterLocationValue(
+  team: PositionedTeam,
+  level: ReturnType<typeof getClusterLevel>,
+) {
+  switch (level) {
+    case "country":
+      return team.location.country;
+    case "state":
+      return team.location.state || team.location.country;
+    case "area":
+      return team.homeRegion || team.location.state || team.location.country;
+    case "city":
+      return team.location.city || team.location.state || team.location.country;
+  }
+}
+
+function getClusterFallbackLabel(level: ReturnType<typeof getClusterLevel>) {
+  switch (level) {
+    case "country":
+      return "Countries";
+    case "state":
+      return "States";
+    case "area":
+      return "Areas";
+    case "city":
+      return "Cities";
+  }
 }
 
 function renderTeamPopup(team: PositionedTeam) {
