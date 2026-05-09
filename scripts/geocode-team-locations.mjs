@@ -21,6 +21,8 @@ const USE_NOMINATIM = process.env.GEOCODE_USE_NOMINATIM === "true";
 const FLUSH_EVERY_SUCCESSFUL_GEOCODES = Number(
   process.env.GEOCODE_FLUSH_EVERY ?? 25,
 );
+const CACHE_COUNTRY_MISMATCH_MAX_DISTANCE_KM = 50;
+const CACHE_EXPECTED_COUNTRY_MAX_DISTANCE_KM = 300;
 const CACHE_STATE_MATCH_MAX_DISTANCE_KM = 50;
 
 if (USE_NOMINATIM && !CONTACT_EMAIL) {
@@ -129,6 +131,8 @@ const REGION_ALIASES = {
 const countryDisplayNames = new Intl.DisplayNames(["en"], { type: "region" });
 const countryCodeByName = buildCountryCodeByName(cities);
 const cityIndex = buildCityIndex(cities);
+const cityCoordinateList = buildCityCoordinateList(cities);
+const countryCodesWithCities = new Set(cityCoordinateList.map((city) => city.country));
 
 const existingCache = await readExistingCache();
 const existingByLocation = new Map(
@@ -163,7 +167,8 @@ for (const team of teams) {
   }
 
   const result =
-    geocodeOffline(location) ?? (USE_NOMINATIM ? await geocodeOnline(query) : null);
+    geocodeOffline(location) ??
+    (USE_NOMINATIM ? await geocodeOnline(query, location) : null);
 
   if (!result) {
     continue;
@@ -306,6 +311,10 @@ function isCachedGeocodeUsable(location, geocode) {
     return false;
   }
 
+  if (!isCachedCountryMatch(location, geocode)) {
+    return false;
+  }
+
   const stateKey = toNormalizedRegionCode(location.state);
 
   if (!stateKey) {
@@ -324,6 +333,67 @@ function isCachedGeocodeUsable(location, geocode) {
       getDistanceKm(geocode.lat, geocode.lng, city) <=
       CACHE_STATE_MATCH_MAX_DISTANCE_KM,
   );
+}
+
+function isCachedCountryMatch(location, geocode) {
+  if (geocode.source !== "nominatim") {
+    return true;
+  }
+
+  return isCoordinateInExpectedCountry(location, geocode.lat, geocode.lng);
+}
+
+function isCoordinateInExpectedCountry(location, lat, lng) {
+  const countryCode = toCountryCode(location.country);
+
+  if (!countryCode) {
+    return true;
+  }
+
+  if (!countryCodesWithCities.has(countryCode)) {
+    return true;
+  }
+
+  const nearestCity = findNearestCity(lat, lng);
+
+  if (!nearestCity || nearestCity.city.country === countryCode) {
+    return true;
+  }
+
+  if (nearestCity.distanceKm > CACHE_COUNTRY_MISMATCH_MAX_DISTANCE_KM) {
+    return true;
+  }
+
+  const nearestExpectedCountryCity = findNearestCity(
+    lat,
+    lng,
+    (city) => city.country === countryCode,
+  );
+
+  return (
+    nearestExpectedCountryCity !== null &&
+    nearestExpectedCountryCity.distanceKm <= CACHE_EXPECTED_COUNTRY_MAX_DISTANCE_KM
+  );
+}
+
+function findNearestCity(lat, lng, predicate = () => true) {
+  let nearest = null;
+  let nearestDistanceKm = Infinity;
+
+  for (const city of cityCoordinateList) {
+    if (!predicate(city)) {
+      continue;
+    }
+
+    const distanceKm = getDistanceKm(lat, lng, city);
+
+    if (distanceKm < nearestDistanceKm) {
+      nearest = city;
+      nearestDistanceKm = distanceKm;
+    }
+  }
+
+  return nearest ? { city: nearest, distanceKm: nearestDistanceKm } : null;
 }
 
 function getCandidateCities(location) {
@@ -367,7 +437,7 @@ function getDistanceKm(lat, lng, city) {
   return 2 * 6371 * Math.asin(Math.sqrt(a));
 }
 
-async function geocodeOnline(query) {
+async function geocodeOnline(query, location) {
   await throttle();
 
   const params = new URLSearchParams({
@@ -378,6 +448,12 @@ async function geocodeOnline(query) {
 
   if (CONTACT_EMAIL) {
     params.set("email", CONTACT_EMAIL);
+  }
+
+  const countryCode = toCountryCode(location.country);
+
+  if (countryCode) {
+    params.set("countrycodes", countryCode.toLowerCase());
   }
 
   const response = await fetch(`${NOMINATIM_URL}?${params.toString()}`, {
@@ -398,6 +474,11 @@ async function geocodeOnline(query) {
 
   if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
     console.warn(`No geocode result for "${query}"`);
+    return null;
+  }
+
+  if (!isCoordinateInExpectedCountry(location, lat, lng)) {
+    console.warn(`Geocode result for "${query}" was outside ${location.country}`);
     return null;
   }
 
@@ -471,6 +552,10 @@ function buildCityIndex(cityList) {
   });
 
   return index;
+}
+
+function buildCityCoordinateList(cityList) {
+  return cityList.filter((city) => city.country && city.loc?.coordinates);
 }
 
 function addCityToIndex(index, key, city) {
