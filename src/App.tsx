@@ -52,25 +52,40 @@ export default function App() {
   );
 
   const stats = useMemo(() => {
-    const countries = new Set(
-      positionedTeams.map((team) => team.location.country).filter(Boolean),
-    );
-    const regions = new Set(
-      positionedTeams
-        .map((team) => `${team.location.country}:${team.location.state}`)
-        .filter((region) => !region.endsWith(":")),
-    );
+    const countries = new Set<string>();
+    const regions = new Set<string>();
+    let logos = 0;
+    let geocoded = 0;
+    let approximate = 0;
+
+    positionedTeams.forEach((team) => {
+      if (team.location.country) {
+        countries.add(team.location.country);
+      }
+
+      if (team.location.country && team.location.state) {
+        regions.add(`${team.location.country}:${team.location.state}`);
+      }
+
+      if (team.logoUrl) {
+        logos += 1;
+      }
+
+      if (team.locationPrecision === "geocoded") {
+        geocoded += 1;
+      }
+
+      if (team.locationPrecision === "country") {
+        approximate += 1;
+      }
+    });
 
     return {
       countries: countries.size,
       regions: regions.size,
-      logos: positionedTeams.filter((team) => team.logoUrl).length,
-      geocoded: positionedTeams.filter(
-        (team) => team.locationPrecision === "geocoded",
-      ).length,
-      approximate:
-        positionedTeams.filter((team) => team.locationPrecision === "country")
-          .length,
+      logos,
+      geocoded,
+      approximate,
     };
   }, [positionedTeams]);
 

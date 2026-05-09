@@ -18,9 +18,7 @@ type TeamGeocodeCache = {
 };
 
 export async function fetchTeamGeocodeCache() {
-  const response = await fetch("/team-geocodes.json", {
-    cache: "no-store",
-  });
+  const response = await fetch("/team-geocodes.json");
 
   if (response.status === 404) {
     return null;

@@ -34,9 +34,7 @@ export type OfficialFtcMetadata = {
 export async function fetchOfficialFtcTeamCache(
   season: number,
 ): Promise<OfficialFtcTeamCache | null> {
-  const response = await fetch("/ftc-official-teams.json", {
-    cache: "no-store",
-  });
+  const response = await fetch("/ftc-official-teams.json");
 
   if (response.status === 404) {
     return null;
