@@ -64,7 +64,7 @@ function TeamMarkerLayer({ teams }: TeamMapProps) {
         title: `${team.number} ${team.name}`,
       });
 
-      marker.bindPopup(renderTeamPopup(team), {
+      marker.bindPopup(() => renderTeamPopup(team), {
         className: "team-popup",
         closeButton: true,
         maxWidth: 270,

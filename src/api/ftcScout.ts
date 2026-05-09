@@ -100,6 +100,23 @@ export async function fetchActiveTeams(): Promise<TeamFetchResult> {
     console.warn("Team geocode cache could not be loaded.", error);
     return null;
   });
+  const [officialCache, geocodeCache] = await Promise.all([
+    officialCachePromise,
+    geocodeCachePromise,
+  ]);
+
+  if (officialCache?.teams.length) {
+    return {
+      teams: mergeTeamGeocodes(
+        mergeOfficialFtcTeams(officialCache.teams, []),
+        geocodeCache,
+      ),
+      season,
+      source: "official-ftc-cache",
+      officialData: getOfficialFtcMetadata(officialCache),
+    };
+  }
+
   let scoutTeams: FtcTeam[] = [];
   let scoutSource: TeamFetchResult["source"] = "rest-fallback";
   let scoutError: unknown = null;
@@ -126,21 +143,6 @@ export async function fetchActiveTeams(): Promise<TeamFetchResult> {
     } catch (error) {
       scoutError = error;
     }
-  }
-
-  const officialCache = await officialCachePromise;
-  const geocodeCache = await geocodeCachePromise;
-
-  if (officialCache?.teams.length) {
-    return {
-      teams: mergeTeamGeocodes(
-        mergeOfficialFtcTeams(officialCache.teams, scoutTeams),
-        geocodeCache,
-      ),
-      season,
-      source: "official-ftc-cache",
-      officialData: getOfficialFtcMetadata(officialCache),
-    };
   }
 
   if (scoutTeams.length > 0) {
