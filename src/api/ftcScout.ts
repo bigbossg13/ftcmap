@@ -112,15 +112,16 @@ export async function fetchActiveTeams(): Promise<TeamFetchResult> {
     };
   }
 
-  const geocodeCache = await fetchTeamGeocodeCache().catch((error) => {
-    console.warn("Team geocode cache could not be loaded.", error);
-    return null;
-  });
-
-  const officialCache = await fetchOfficialFtcTeamCache(season).catch((error) => {
-    console.warn("Official FTC team cache could not be loaded.", error);
-    return null;
-  });
+  const [geocodeCache, officialCache] = await Promise.all([
+    fetchTeamGeocodeCache().catch((error) => {
+      console.warn("Team geocode cache could not be loaded.", error);
+      return null;
+    }),
+    fetchOfficialFtcTeamCache(season).catch((error) => {
+      console.warn("Official FTC team cache could not be loaded.", error);
+      return null;
+    }),
+  ]);
 
   if (officialCache?.teams.length) {
     return {
