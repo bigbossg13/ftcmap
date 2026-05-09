@@ -169,6 +169,14 @@ body {
     linear-gradient(135deg, rgb(37 99 235 / 0.95), rgb(79 70 229 / 0.95));
 }
 
+.team-cluster--aggregate {
+  border-color: rgb(221 214 254 / 0.72);
+  box-shadow:
+    0 0 0 7px rgb(99 102 241 / 0.2),
+    0 18px 42px rgb(0 0 0 / 0.44),
+    0 0 36px rgb(129 140 248 / 0.42);
+}
+
 .team-cluster--state {
   background:
     radial-gradient(circle at 35% 25%, rgb(255 255 255 / 0.35), transparent 28%),
