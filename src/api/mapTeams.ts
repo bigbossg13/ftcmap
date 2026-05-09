@@ -1,4 +1,5 @@
 import type { FtcTeam } from "./ftcScout";
+import { getPublicAssetUrl } from "./publicAsset";
 
 export type MapTeamCache = {
   generatedAt: string;
@@ -10,7 +11,7 @@ export type MapTeamCache = {
 export async function fetchMapTeamCache(
   season: number,
 ): Promise<MapTeamCache | null> {
-  const response = await fetch("/map-teams.json");
+  const response = await fetch(getPublicAssetUrl("map-teams.json"));
 
   if (response.status === 404) {
     return null;

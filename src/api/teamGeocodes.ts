@@ -1,4 +1,5 @@
 import type { FtcTeam } from "./ftcScout";
+import { getPublicAssetUrl } from "./publicAsset";
 
 export type TeamCoordinates = {
   lat: number;
@@ -18,7 +19,7 @@ type TeamGeocodeCache = {
 };
 
 export async function fetchTeamGeocodeCache() {
-  const response = await fetch("/team-geocodes.json");
+  const response = await fetch(getPublicAssetUrl("team-geocodes.json"));
 
   if (response.status === 404) {
     return null;

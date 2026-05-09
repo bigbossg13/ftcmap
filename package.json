@@ -6,6 +6,7 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
+    "build:pages": "tsc --noEmit && vite build --base=/ftcmap/",
     "preview": "vite preview",
     "sync:ftcscout": "node scripts/sync-ftcscout-teams.mjs",
     "sync:ftc": "node scripts/sync-ftc-official-teams.mjs",
