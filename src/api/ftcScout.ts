@@ -11,6 +11,7 @@ export type FtcTeam = {
   rookieYear?: number;
   website?: string | null;
   activeSeasons?: number[];
+  updatedAt?: string;
   location: TeamLocation;
 };
 
@@ -85,14 +86,14 @@ export async function fetchActiveTeams(): Promise<TeamFetchResult> {
   }
 
   return {
-    teams: await fetchTeamsFromRest(),
+    teams: await fetchTeamsFromRest(season),
     season,
     source: "rest-fallback",
   };
 }
 
 async function fetchTeamsFromGraphQl() {
-  const response = await fetchWithTimeout(FTC_SCOUT_GRAPHQL_URL, 12000, {
+  const response = await fetchWithTimeout(FTC_SCOUT_GRAPHQL_URL, 6000, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
@@ -116,14 +117,19 @@ async function fetchTeamsFromGraphQl() {
   return normalizeTeams(payload.data?.teamsSearch ?? []);
 }
 
-async function fetchTeamsFromRest() {
+async function fetchTeamsFromRest(season: number) {
   const response = await fetchWithTimeout(FTC_SCOUT_REST_TEAMS_URL, 16000);
 
   if (!response.ok) {
     throw new Error(`FTCScout REST returned ${response.status}`);
   }
 
-  return normalizeTeams((await response.json()) as RestTeam[]);
+  const teams = normalizeTeams((await response.json()) as RestTeam[]);
+  const likelyActiveTeams = teams.filter((team) =>
+    wasUpdatedDuringSeason(team, season),
+  );
+
+  return likelyActiveTeams.length > 0 ? likelyActiveTeams : teams;
 }
 
 async function fetchWithTimeout(
@@ -176,6 +182,10 @@ function normalizeTeams(teams: Array<GraphQlTeam | RestTeam>): FtcTeam[] {
       normalizedTeam.activeSeasons = team.activeSeasons;
     }
 
+    if (typeof team.updatedAt === "string") {
+      normalizedTeam.updatedAt = team.updatedAt;
+    }
+
     normalizedTeams.push(normalizedTeam);
   });
 
@@ -202,4 +212,18 @@ function normalizeLocation(team: GraphQlTeam | RestTeam): TeamLocation | null {
 
 function normalizeLocationPart(value: unknown) {
   return typeof value === "string" ? value.trim() : "";
+}
+
+function wasUpdatedDuringSeason(team: FtcTeam, season: number) {
+  if (!team.updatedAt) {
+    return false;
+  }
+
+  const updatedAt = new Date(team.updatedAt);
+
+  if (Number.isNaN(updatedAt.getTime())) {
+    return false;
+  }
+
+  return updatedAt.getUTCFullYear() >= season;
 }

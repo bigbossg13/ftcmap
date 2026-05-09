@@ -136,8 +136,9 @@ export default function App() {
               </InfoPanel>
               {isRestFallback ? (
                 <div className="rounded-2xl border border-amber-300/20 bg-amber-300/10 p-4 text-sm leading-6 text-amber-100">
-                  Active-season filtering is unavailable in the REST fallback,
-                  so this view shows FTCScout&apos;s full team directory.
+                  Active-season filtering is estimated from current-season
+                  FTCScout record updates because GraphQL active seasons were
+                  unavailable.
                 </div>
               ) : null}
               {loadState.status === "error" ? (
