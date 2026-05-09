@@ -144,26 +144,42 @@ async function fetchWithTimeout(
   }
 }
 
-function normalizeTeams(teams: Array<GraphQlTeam | RestTeam>) {
-  return teams
-    .map((team) => {
-      const location = normalizeLocation(team);
+function normalizeTeams(teams: Array<GraphQlTeam | RestTeam>): FtcTeam[] {
+  const normalizedTeams: FtcTeam[] = [];
 
-      if (!team.number || !team.name || !location) {
-        return null;
-      }
+  teams.forEach((team) => {
+    const location = normalizeLocation(team);
 
-      return {
-        number: team.number,
-        name: team.name,
-        schoolName: team.schoolName,
-        rookieYear: team.rookieYear,
-        website: team.website,
-        activeSeasons: team.activeSeasons,
-        location,
-      } satisfies FtcTeam;
-    })
-    .filter((team): team is FtcTeam => team !== null);
+    if (typeof team.number !== "number" || !team.name || !location) {
+      return;
+    }
+
+    const normalizedTeam: FtcTeam = {
+      number: team.number,
+      name: team.name,
+      location,
+    };
+
+    if (team.schoolName) {
+      normalizedTeam.schoolName = team.schoolName;
+    }
+
+    if (typeof team.rookieYear === "number") {
+      normalizedTeam.rookieYear = team.rookieYear;
+    }
+
+    if (typeof team.website === "string" || team.website === null) {
+      normalizedTeam.website = team.website;
+    }
+
+    if (Array.isArray(team.activeSeasons)) {
+      normalizedTeam.activeSeasons = team.activeSeasons;
+    }
+
+    normalizedTeams.push(normalizedTeam);
+  });
+
+  return normalizedTeams;
 }
 
 function normalizeLocation(team: GraphQlTeam | RestTeam): TeamLocation | null {
