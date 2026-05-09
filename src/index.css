@@ -163,6 +163,12 @@ body {
   color: rgb(224 242 254 / 0.9);
 }
 
+.team-cluster--continent {
+  background:
+    radial-gradient(circle at 35% 25%, rgb(255 255 255 / 0.35), transparent 28%),
+    linear-gradient(135deg, rgb(124 58 237 / 0.95), rgb(79 70 229 / 0.95));
+}
+
 .team-cluster--country {
   background:
     radial-gradient(circle at 35% 25%, rgb(255 255 255 / 0.35), transparent 28%),
@@ -177,7 +183,7 @@ body {
     0 0 36px rgb(129 140 248 / 0.42);
 }
 
-.team-cluster--state {
+.team-cluster--region {
   background:
     radial-gradient(circle at 35% 25%, rgb(255 255 255 / 0.35), transparent 28%),
     linear-gradient(135deg, rgb(8 145 178 / 0.95), rgb(37 99 235 / 0.95));
