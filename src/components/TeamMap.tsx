@@ -97,9 +97,9 @@ function createTeamIcon(team: PositionedTeam) {
   return L.divIcon({
     className: "team-marker-icon",
     html: `<span class="team-marker ${precisionClass}"></span>`,
-    iconSize: [18, 18],
-    iconAnchor: [9, 9],
-    popupAnchor: [0, -10],
+    iconSize: [28, 34],
+    iconAnchor: [14, 32],
+    popupAnchor: [0, -30],
   });
 }
 
@@ -134,7 +134,6 @@ function renderTeamPopup(team: PositionedTeam) {
       <p class="team-popup-location">${escapeHtml(location || "Location unavailable")}</p>
       ${team.robotName ? `<p class="team-popup-location">Robot: ${escapeHtml(team.robotName)}</p>` : ""}
       ${team.homeRegion ? `<p class="team-popup-location">Region: ${escapeHtml(team.homeRegion)}</p>` : ""}
-      <p class="team-popup-location">Mapped from city, state, country</p>
       <a class="team-popup-link" href="${getFtcScoutProfileUrl(
         team.number,
       )}" target="_blank" rel="noreferrer">View FTCScout profile</a>

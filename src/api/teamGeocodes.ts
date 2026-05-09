@@ -37,39 +37,6 @@ export async function fetchTeamGeocodeCache() {
   return cache;
 }
 
-export function mergeTeamGeocodes(
-  teams: FtcTeam[],
-  cache: TeamGeocodeCache | null,
-) {
-  if (!cache) {
-    return teams;
-  }
-
-  const geocodeByTeam = new Map(
-    cache.teams
-      .filter(hasValidCoordinates)
-      .map((geocode) => [geocode.number, geocode] as const),
-  );
-
-  return teams.map((team) => {
-    const geocode = geocodeByTeam.get(team.number);
-
-    if (!geocode) {
-      return team;
-    }
-
-    return {
-      ...team,
-      coordinates: {
-        lat: geocode.lat,
-        lng: geocode.lng,
-        source: geocode.source,
-        query: geocode.query,
-      },
-    };
-  });
-}
-
 export function buildGeocodedTeams(
   teams: FtcTeam[],
   cache: TeamGeocodeCache | null,
