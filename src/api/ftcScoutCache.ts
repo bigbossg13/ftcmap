@@ -1,4 +1,5 @@
 import type { FtcTeam } from "./ftcScout";
+import { getPublicAssetUrl } from "./publicAsset";
 
 export type FtcScoutTeamCache = {
   generatedAt: string;
@@ -10,7 +11,7 @@ export type FtcScoutTeamCache = {
 export async function fetchFtcScoutTeamCache(
   season: number,
 ): Promise<FtcScoutTeamCache | null> {
-  const response = await fetch("/ftcscout-teams.json");
+  const response = await fetch(getPublicAssetUrl("ftcscout-teams.json"));
 
   if (response.status === 404) {
     return null;

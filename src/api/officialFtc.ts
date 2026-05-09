@@ -1,4 +1,5 @@
 import type { FtcTeam, TeamLocation } from "./ftcScout";
+import { getPublicAssetUrl } from "./publicAsset";
 import type { TeamCoordinates } from "./teamGeocodes";
 
 export type OfficialFtcTeam = {
@@ -34,7 +35,7 @@ export type OfficialFtcMetadata = {
 export async function fetchOfficialFtcTeamCache(
   season: number,
 ): Promise<OfficialFtcTeamCache | null> {
-  const response = await fetch("/ftc-official-teams.json");
+  const response = await fetch(getPublicAssetUrl("ftc-official-teams.json"));
 
   if (response.status === 404) {
     return null;
