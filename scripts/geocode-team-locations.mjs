@@ -21,6 +21,7 @@ const USE_NOMINATIM = process.env.GEOCODE_USE_NOMINATIM === "true";
 const FLUSH_EVERY_SUCCESSFUL_GEOCODES = Number(
   process.env.GEOCODE_FLUSH_EVERY ?? 25,
 );
+const CACHE_STATE_MATCH_MAX_DISTANCE_KM = 50;
 const COUNTRY_ALIASES = {
   AUS: "AU",
   AUSTRALIA: "AU",
@@ -145,7 +146,7 @@ for (const team of teams) {
 
   const cached = existingByLocation.get(normalizeLocationKey(query));
 
-  if (cached) {
+  if (cached && isCachedGeocodeUsable(location, cached)) {
     geocodes.push({
       number: team.number,
       lat: cached.lat,
@@ -260,20 +261,13 @@ async function readExistingCache() {
 }
 
 function geocodeOffline(location) {
-  const cityKeys = getCityKeyCandidates(location.city);
-  const countryCode = toCountryCode(location.country);
+  const candidates = getCandidateCities(location);
 
-  if (cityKeys.length === 0 || !countryCode) {
+  if (candidates.length === 0) {
     return null;
   }
 
-  const candidates = cityKeys.flatMap(
-    (cityKey) => cityIndex.get(`${countryCode}:${cityKey}`) ?? [],
-  );
-  const stateKey = toRegionCode(location.state);
-  const stateMatches = stateKey
-    ? candidates.filter((city) => normalizeLocationKey(city.adminCode) === stateKey)
-    : candidates;
+  const stateMatches = getStateMatches(candidates, location.state);
   const match = (stateMatches.length > 0 ? stateMatches : candidates)[0];
 
   if (!match) {
@@ -291,6 +285,77 @@ function geocodeOffline(location) {
     lng,
     source: "all-the-cities",
   };
+}
+
+function isCachedGeocodeUsable(location, geocode) {
+  if (
+    typeof geocode.lat !== "number" ||
+    !Number.isFinite(geocode.lat) ||
+    typeof geocode.lng !== "number" ||
+    !Number.isFinite(geocode.lng)
+  ) {
+    return false;
+  }
+
+  const stateKey = toNormalizedRegionCode(location.state);
+
+  if (!stateKey) {
+    return true;
+  }
+
+  const candidates = getCandidateCities(location);
+  const stateMatches = candidates.filter((city) => isRegionMatch(city, stateKey));
+
+  if (stateMatches.length === 0) {
+    return true;
+  }
+
+  return stateMatches.some(
+    (city) =>
+      getDistanceKm(geocode.lat, geocode.lng, city) <=
+      CACHE_STATE_MATCH_MAX_DISTANCE_KM,
+  );
+}
+
+function getCandidateCities(location) {
+  const cityKeys = getCityKeyCandidates(location.city);
+  const countryCode = toCountryCode(location.country);
+
+  if (cityKeys.length === 0 || !countryCode) {
+    return [];
+  }
+
+  return cityKeys.flatMap(
+    (cityKey) => cityIndex.get(`${countryCode}:${cityKey}`) ?? [],
+  );
+}
+
+function getStateMatches(candidates, state) {
+  const stateKey = toNormalizedRegionCode(state);
+
+  if (!stateKey) {
+    return candidates;
+  }
+
+  return candidates.filter((city) => isRegionMatch(city, stateKey));
+}
+
+function isRegionMatch(city, stateKey) {
+  return normalizeLocationKey(city.adminCode).toUpperCase() === stateKey;
+}
+
+function getDistanceKm(lat, lng, city) {
+  const [cityLng, cityLat] = city.loc.coordinates;
+  const toRadians = (value) => (value * Math.PI) / 180;
+  const latDelta = toRadians(cityLat - lat);
+  const lngDelta = toRadians(cityLng - lng);
+  const a =
+    Math.sin(latDelta / 2) ** 2 +
+    Math.cos(toRadians(lat)) *
+      Math.cos(toRadians(cityLat)) *
+      Math.sin(lngDelta / 2) ** 2;
+
+  return 2 * 6371 * Math.asin(Math.sqrt(a));
 }
 
 async function geocodeOnline(query) {
@@ -423,6 +488,12 @@ function toRegionCode(state) {
   const stateKey = normalizeLocationKey(state).toUpperCase().replace(/\s+/g, "_");
 
   return REGION_ALIASES[stateKey] ?? stateKey;
+}
+
+function toNormalizedRegionCode(state) {
+  const regionCode = toRegionCode(state);
+
+  return regionCode ? normalizeLocationKey(regionCode).toUpperCase() : "";
 }
 
 function getCityKeyCandidates(city) {
