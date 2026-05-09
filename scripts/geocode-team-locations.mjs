@@ -1,6 +1,10 @@
 import { readFile, rename, writeFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
+import { createRequire } from "node:module";
 import { resolve } from "node:path";
+
+const require = createRequire(import.meta.url);
+const cities = require("all-the-cities");
 
 const FTC_SCOUT_REST_TEAMS_URL =
   "https://api.ftcscout.org/rest/v1/teams/search?limit=30000";
@@ -13,9 +17,110 @@ const USER_AGENT =
   process.env.GEOCODE_USER_AGENT ??
   "ftcmap/1.0 geocoder (https://github.com/bigbossg13/ftcmap)";
 const CONTACT_EMAIL = process.env.GEOCODE_EMAIL;
+const USE_NOMINATIM = process.env.GEOCODE_USE_NOMINATIM === "true";
 const FLUSH_EVERY_SUCCESSFUL_GEOCODES = Number(
   process.env.GEOCODE_FLUSH_EVERY ?? 25,
 );
+const COUNTRY_ALIASES = {
+  AUS: "AU",
+  AUSTRALIA: "AU",
+  BRA: "BR",
+  BRAZIL: "BR",
+  CAN: "CA",
+  CANADA: "CA",
+  CHN: "CN",
+  CHINA: "CN",
+  DEU: "DE",
+  GERMANY: "DE",
+  IND: "IN",
+  INDIA: "IN",
+  ISR: "IL",
+  ISRAEL: "IL",
+  JPN: "JP",
+  JAPAN: "JP",
+  MEXICO: "MX",
+  MEX: "MX",
+  NETHERLANDS: "NL",
+  NEW_ZEALAND: "NZ",
+  SOUTH_KOREA: "KR",
+  SPAIN: "ES",
+  TURKEY: "TR",
+  TURKIYE: "TR",
+  UK: "GB",
+  UNITED_KINGDOM: "GB",
+  UNITED_STATES: "US",
+  UNITED_STATES_OF_AMERICA: "US",
+  US: "US",
+  USA: "US",
+};
+const REGION_ALIASES = {
+  ALABAMA: "AL",
+  ALASKA: "AK",
+  ARIZONA: "AZ",
+  ARKANSAS: "AR",
+  CALIFORNIA: "CA",
+  COLORADO: "CO",
+  CONNECTICUT: "CT",
+  DELAWARE: "DE",
+  DISTRICT_OF_COLUMBIA: "DC",
+  FLORIDA: "FL",
+  GEORGIA: "GA",
+  HAWAII: "HI",
+  IDAHO: "ID",
+  ILLINOIS: "IL",
+  INDIANA: "IN",
+  IOWA: "IA",
+  KANSAS: "KS",
+  KENTUCKY: "KY",
+  LOUISIANA: "LA",
+  MAINE: "ME",
+  MARYLAND: "MD",
+  MASSACHUSETTS: "MA",
+  MICHIGAN: "MI",
+  MINNESOTA: "MN",
+  MISSISSIPPI: "MS",
+  MISSOURI: "MO",
+  MONTANA: "MT",
+  NEBRASKA: "NE",
+  NEVADA: "NV",
+  NEW_HAMPSHIRE: "NH",
+  NEW_JERSEY: "NJ",
+  NEW_MEXICO: "NM",
+  NEW_YORK: "NY",
+  NORTH_CAROLINA: "NC",
+  NORTH_DAKOTA: "ND",
+  OHIO: "OH",
+  OKLAHOMA: "OK",
+  OREGON: "OR",
+  PENNSYLVANIA: "PA",
+  PUERTO_RICO: "PR",
+  RHODE_ISLAND: "RI",
+  SOUTH_CAROLINA: "SC",
+  SOUTH_DAKOTA: "SD",
+  TENNESSEE: "TN",
+  TEXAS: "TX",
+  UTAH: "UT",
+  VERMONT: "VT",
+  VIRGINIA: "VA",
+  WASHINGTON: "WA",
+  WEST_VIRGINIA: "WV",
+  WISCONSIN: "WI",
+  WYOMING: "WY",
+  ALBERTA: "AB",
+  BRITISH_COLUMBIA: "BC",
+  MANITOBA: "MB",
+  NEW_BRUNSWICK: "NB",
+  NEWFOUNDLAND_AND_LABRADOR: "NL",
+  NOVA_SCOTIA: "NS",
+  NORTHWEST_TERRITORIES: "NT",
+  NUNAVUT: "NU",
+  ONTARIO: "ON",
+  PRINCE_EDWARD_ISLAND: "PE",
+  QUEBEC: "QC",
+  SASKATCHEWAN: "SK",
+  YUKON: "YT",
+};
+const cityIndex = buildCityIndex(cities);
 
 const existingCache = await readExistingCache();
 const existingByLocation = new Map(
@@ -29,7 +134,8 @@ let lastRequestAt = 0;
 let successfulGeocodesSinceFlush = 0;
 
 for (const team of teams) {
-  const query = formatLocationQuery(team);
+  const location = normalizeLocation(team);
+  const query = formatLocationQuery(location);
 
   if (!query) {
     continue;
@@ -48,7 +154,8 @@ for (const team of teams) {
     continue;
   }
 
-  const result = await geocode(query);
+  const result =
+    geocodeOffline(location) ?? (USE_NOMINATIM ? await geocodeOnline(query) : null);
 
   if (!result) {
     continue;
@@ -59,7 +166,7 @@ for (const team of teams) {
     lat: result.lat,
     lng: result.lng,
     query,
-    source: "nominatim",
+    source: result.source,
   };
 
   geocodes.push(geocodeRecord);
@@ -150,7 +257,39 @@ async function readExistingCache() {
   }
 }
 
-async function geocode(query) {
+function geocodeOffline(location) {
+  const cityKey = normalizeLocationKey(location.city);
+  const countryCode = toCountryCode(location.country);
+
+  if (!cityKey || !countryCode) {
+    return null;
+  }
+
+  const candidates = cityIndex.get(`${countryCode}:${cityKey}`) ?? [];
+  const stateKey = toRegionCode(location.state);
+  const stateMatches = stateKey
+    ? candidates.filter((city) => normalizeLocationKey(city.adminCode) === stateKey)
+    : candidates;
+  const match = (stateMatches.length > 0 ? stateMatches : candidates)[0];
+
+  if (!match) {
+    return null;
+  }
+
+  const [lng, lat] = match.loc.coordinates;
+
+  if (!Number.isFinite(lat) || !Number.isFinite(lng)) {
+    return null;
+  }
+
+  return {
+    lat,
+    lng,
+    source: "all-the-cities",
+  };
+}
+
+async function geocodeOnline(query) {
   await throttle();
 
   const params = new URLSearchParams({
@@ -186,7 +325,7 @@ async function geocode(query) {
 
   console.log(`Geocoded ${query} -> ${lat}, ${lng}`);
 
-  return { lat, lng };
+  return { lat, lng, source: "nominatim" };
 }
 
 async function throttle() {
@@ -200,10 +339,16 @@ async function throttle() {
   lastRequestAt = Date.now();
 }
 
-function formatLocationQuery(team) {
-  const city = normalizeLocationPart(team.city);
-  const state = normalizeLocationPart(team.state);
-  const country = normalizeLocationPart(team.country);
+function normalizeLocation(team) {
+  return {
+    city: normalizeLocationPart(team.city),
+    state: normalizeLocationPart(team.state),
+    country: normalizeLocationPart(team.country),
+  };
+}
+
+function formatLocationQuery(location) {
+  const { city, state, country } = location;
 
   return [city, state, country].filter(Boolean).join(", ");
 }
@@ -213,5 +358,49 @@ function normalizeLocationPart(value) {
 }
 
 function normalizeLocationKey(value) {
-  return value.trim().toLowerCase().replace(/\s+/g, " ");
+  return normalizeLocationPart(value)
+    .toLowerCase()
+    .normalize("NFKD")
+    .replace(/[\u0300-\u036f]/g, "")
+    .replace(/[^\w\s]/g, " ")
+    .replace(/\s+/g, " ")
+    .trim();
 }
+
+function buildCityIndex(cityList) {
+  const index = new Map();
+
+  cityList.forEach((city) => {
+    if (!city.name || !city.country || !city.loc?.coordinates) {
+      return;
+    }
+
+    const key = `${city.country}:${normalizeLocationKey(city.name)}`;
+    const matches = index.get(key) ?? [];
+
+    matches.push(city);
+    index.set(key, matches);
+  });
+
+  index.forEach((matches) => {
+    matches.sort((a, b) => (b.population ?? 0) - (a.population ?? 0));
+  });
+
+  return index;
+}
+
+function toCountryCode(country) {
+  const countryKey = normalizeLocationKey(country).toUpperCase().replace(/\s+/g, "_");
+
+  return (
+    COUNTRY_ALIASES[countryKey] ??
+    (countryKey.length === 2 ? countryKey : undefined)
+  );
+}
+
+function toRegionCode(state) {
+  const stateKey = normalizeLocationKey(state).toUpperCase().replace(/\s+/g, "_");
+
+  return REGION_ALIASES[stateKey] ?? stateKey;
+}
+

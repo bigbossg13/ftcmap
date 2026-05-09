@@ -18,7 +18,8 @@ using FTCScout API data, with optional official FTC Events API enrichment.
 
 FTCScout and the official FTC Events API do not expose precise team
 latitude/longitude. The fastest path is `public/map-teams.json`, a generated
-cache of only teams with city-level coordinates. Teams without generated
+cache of only teams with city-level coordinates. A prebuilt cache is committed
+so the app shows mapped teams immediately after install. Teams without generated
 coordinates are intentionally left off the map instead of being placed at
 approximate regional or country centroids.
 
@@ -62,9 +63,10 @@ npm run sync:ftcscout
 
 This writes `public/ftcscout-teams.json`.
 
-## Optional geocoded coordinates
+## Refreshing geocoded coordinates
 
-To convert team city/state/country text into specific coordinates, generate the
+You do not need to run this for normal local viewing because prebuilt cache files
+are committed. To refresh coordinates after team data changes, generate the
 geocode cache and then build the map-ready cache:
 
 ```bash
@@ -74,8 +76,9 @@ npm run build:map-cache
 
 The script writes `public/team-geocodes.json`. It prefers
 `public/ftc-official-teams.json` if present; otherwise it uses the FTCScout REST
-team list. It reuses existing cached locations and rate-limits Nominatim
-requests, so the first full run can take a while.
+team list. It uses an offline city database by default, reuses existing cached
+locations, and can optionally use Nominatim for missing locations by setting
+`GEOCODE_USE_NOMINATIM=true`.
 
 `build:map-cache` writes `public/map-teams.json`, a smaller startup cache that
 the app loads before any other data source. The map only renders teams that have
