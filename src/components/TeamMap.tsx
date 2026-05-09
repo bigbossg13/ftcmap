@@ -18,15 +18,28 @@ type AggregateClusterGroup = {
   count: number;
   label: string;
   position: [number, number];
+  teams: PositionedTeam[];
 };
 
 type ClusterLevel = "continent" | "country" | "region" | "city";
 
-type AggregateClusterLevel = Extract<ClusterLevel, "continent" | "country">;
+type AggregateClusterLevel = Extract<
+  ClusterLevel,
+  "continent" | "country" | "region"
+>;
 
 type ClusterDescriptor = {
   key: string;
   label: string;
+};
+
+type RegionClusterDescriptor = ClusterDescriptor & {
+  countryKey: string;
+};
+
+type RegionClusterPlan = {
+  groups: AggregateClusterGroup[];
+  passthroughTeams: PositionedTeam[];
 };
 
 const COUNTRY_CONTINENTS: Record<string, string> = {
@@ -80,15 +93,7 @@ const COUNTRY_CONTINENTS: Record<string, string> = {
   vietnam: "Asia",
 };
 
-const OUTLYING_US_REGIONS: Record<string, string> = {
-  AK: "Alaska",
-  AS: "American Samoa",
-  GU: "Guam",
-  HI: "Hawaii",
-  MP: "Northern Mariana Islands",
-  PR: "Puerto Rico",
-  VI: "U.S. Virgin Islands",
-};
+const MIN_REGION_CLUSTER_TEAMS = 2;
 
 export default function TeamMap({ teams }: TeamMapProps) {
   return (
@@ -146,32 +151,31 @@ function TeamMarkerLayer({ teams }: TeamMapProps) {
   const map = useMap();
 
   useEffect(() => {
-    const teamLayer = L.markerClusterGroup({
+    const cityLayer = L.markerClusterGroup({
       chunkedLoading: true,
       maxClusterRadius: getClusterRadius,
       showCoverageOnHover: false,
       spiderfyOnMaxZoom: true,
-      iconCreateFunction: (cluster) => createClusterIcon(cluster, map.getZoom()),
+      iconCreateFunction: (cluster) => createClusterIcon(cluster, "city"),
+    });
+    const regionPassthroughLayer = L.markerClusterGroup({
+      chunkedLoading: true,
+      maxClusterRadius: getClusterRadius,
+      showCoverageOnHover: false,
+      spiderfyOnMaxZoom: true,
+      iconCreateFunction: (cluster) => createClusterIcon(cluster, "city"),
     });
     const countryLayer = L.layerGroup();
     const continentLayer = L.layerGroup();
+    const regionLayer = L.layerGroup();
+    const regionClusterPlan = buildRegionClusterPlan(teams);
 
     teams.forEach((team) => {
-      const marker = L.marker(team.position, {
-        icon: createTeamIcon(team),
-        title: `${team.number} ${team.name}`,
-      }) as TeamMarker;
+      cityLayer.addLayer(createTeamMarker(team));
+    });
 
-      marker.team = team;
-
-      marker.bindPopup(() => renderTeamPopup(team), {
-        className: "team-popup",
-        closeButton: true,
-        maxWidth: 270,
-        minWidth: 250,
-      });
-
-      teamLayer.addLayer(marker);
+    regionClusterPlan.passthroughTeams.forEach((team) => {
+      regionPassthroughLayer.addLayer(createTeamMarker(team));
     });
 
     buildAggregateClusterGroups(teams, "country").forEach((group) => {
@@ -189,6 +193,23 @@ function TeamMarkerLayer({ teams }: TeamMapProps) {
       });
 
       countryLayer.addLayer(marker);
+    });
+
+    regionClusterPlan.groups.forEach((group) => {
+      const marker = L.marker(group.position, {
+        icon: createAggregateClusterIcon(group, "region"),
+        title: `${group.label}: ${group.count.toLocaleString()} teams`,
+        zIndexOffset: 300,
+      });
+
+      marker.on("click", () => {
+        map.fitBounds(group.bounds.pad(0.12), {
+          animate: true,
+          maxZoom: 7,
+        });
+      });
+
+      regionLayer.addLayer(marker);
     });
 
     buildAggregateClusterGroups(teams, "continent").forEach((group) => {
@@ -212,20 +233,21 @@ function TeamMarkerLayer({ teams }: TeamMapProps) {
       const clusterLevel = getClusterLevel(map.getZoom());
       const showContinentLayer = clusterLevel === "continent";
       const showCountryLayer = clusterLevel === "country";
-
-      if (showContinentLayer || showCountryLayer) {
-        if (map.hasLayer(teamLayer)) {
-          map.removeLayer(teamLayer);
-        }
-      } else if (!map.hasLayer(teamLayer)) {
-        teamLayer.addTo(map);
-      }
+      const showRegionLayer = clusterLevel === "region";
+      const showCityLayer = clusterLevel === "city";
 
       syncLayerVisibility(map, continentLayer, showContinentLayer);
       syncLayerVisibility(map, countryLayer, showCountryLayer);
+      syncLayerVisibility(map, regionLayer, showRegionLayer);
+      syncLayerVisibility(map, regionPassthroughLayer, showRegionLayer);
+      syncLayerVisibility(map, cityLayer, showCityLayer);
 
-      if (!showContinentLayer && !showCountryLayer) {
-        teamLayer.refreshClusters();
+      if (showRegionLayer) {
+        regionPassthroughLayer.refreshClusters();
+      }
+
+      if (showCityLayer) {
+        cityLayer.refreshClusters();
       }
     };
 
@@ -244,11 +266,31 @@ function TeamMarkerLayer({ teams }: TeamMapProps) {
       map.off("zoomend", syncVisibleLayer);
       continentLayer.removeFrom(map);
       countryLayer.removeFrom(map);
-      teamLayer.removeFrom(map);
+      regionLayer.removeFrom(map);
+      regionPassthroughLayer.removeFrom(map);
+      cityLayer.removeFrom(map);
     };
   }, [map, teams]);
 
   return null;
+}
+
+function createTeamMarker(team: PositionedTeam) {
+  const marker = L.marker(team.position, {
+    icon: createTeamIcon(team),
+    title: `${team.number} ${team.name}`,
+  }) as TeamMarker;
+
+  marker.team = team;
+
+  marker.bindPopup(() => renderTeamPopup(team), {
+    className: "team-popup",
+    closeButton: true,
+    maxWidth: 270,
+    minWidth: 250,
+  });
+
+  return marker;
 }
 
 function createTeamIcon(team: PositionedTeam) {
@@ -276,9 +318,9 @@ function getClusterRadius(zoom: number) {
   return 34;
 }
 
-function createClusterIcon(cluster: L.MarkerCluster, zoom: number) {
+function createClusterIcon(cluster: L.MarkerCluster, level: ClusterLevel) {
   const count = cluster.getChildCount();
-  const summary = getClusterSummary(cluster, zoom);
+  const summary = getClusterSummary(cluster, level);
 
   return L.divIcon({
     className: "team-cluster-icon",
@@ -334,10 +376,12 @@ function buildAggregateClusterGroups(
   >();
 
   teams.forEach((team) => {
-    const descriptor =
-      level === "continent"
-        ? getContinentClusterDescriptor(team)
-        : getCountryClusterDescriptor(team);
+    const descriptor = getAggregateClusterDescriptor(team, level);
+
+    if (!descriptor) {
+      return;
+    }
+
     const group = groups.get(descriptor.key) ?? {
       label: descriptor.label,
       teams: [],
@@ -356,8 +400,91 @@ function buildAggregateClusterGroups(
       count: group.teams.length,
       label: group.label,
       position,
+      teams: group.teams,
     };
   });
+}
+
+function buildRegionClusterPlan(teams: PositionedTeam[]): RegionClusterPlan {
+  const groups = new Map<
+    string,
+    {
+      countryKey: string;
+      label: string;
+      teams: PositionedTeam[];
+      cityKeys: Set<string>;
+    }
+  >();
+  const countryRegionKeys = new Map<string, Set<string>>();
+  const passthroughTeams: PositionedTeam[] = [];
+
+  teams.forEach((team) => {
+    const descriptor = getRegionClusterDescriptor(team);
+
+    if (!descriptor) {
+      passthroughTeams.push(team);
+      return;
+    }
+
+    const group = groups.get(descriptor.key) ?? {
+      countryKey: descriptor.countryKey,
+      label: descriptor.label,
+      teams: [],
+      cityKeys: new Set<string>(),
+    };
+    const countryRegions =
+      countryRegionKeys.get(descriptor.countryKey) ?? new Set<string>();
+    const cityKey = normalizeClusterKey(team.location.city);
+
+    group.teams.push(team);
+
+    if (cityKey) {
+      group.cityKeys.add(cityKey);
+    }
+
+    countryRegions.add(descriptor.key);
+    groups.set(descriptor.key, group);
+    countryRegionKeys.set(descriptor.countryKey, countryRegions);
+  });
+
+  const aggregateGroups: AggregateClusterGroup[] = [];
+
+  groups.forEach((group) => {
+    if (!shouldAggregateRegionGroup(group, countryRegionKeys)) {
+      passthroughTeams.push(...group.teams);
+      return;
+    }
+
+    const bounds = L.latLngBounds(group.teams.map((team) => team.position));
+    const position = getAveragePosition(group.teams);
+
+    aggregateGroups.push({
+      bounds,
+      count: group.teams.length,
+      label: group.label,
+      position,
+      teams: group.teams,
+    });
+  });
+
+  return {
+    groups: aggregateGroups,
+    passthroughTeams,
+  };
+}
+
+function getAggregateClusterDescriptor(
+  team: PositionedTeam,
+  level: AggregateClusterLevel,
+) {
+  switch (level) {
+    case "continent":
+      return getContinentClusterDescriptor(team);
+    case "country":
+      return getCountryClusterDescriptor(team);
+    case "region":
+      return getRegionClusterDescriptor(team);
+  }
 }
 
 function getContinentClusterDescriptor(team: PositionedTeam): ClusterDescriptor {
@@ -373,19 +500,30 @@ function getContinentClusterDescriptor(team: PositionedTeam): ClusterDescriptor 
 
 function getCountryClusterDescriptor(team: PositionedTeam): ClusterDescriptor {
   const country = normalizeClusterPart(team.location.country) || "Unknown";
-  const state = normalizeClusterPart(team.location.state).toUpperCase();
   const countryKey = normalizeClusterKey(country);
-
-  if (isUnitedStates(country) && OUTLYING_US_REGIONS[state]) {
-    return {
-      key: `${countryKey}:${state}`,
-      label: OUTLYING_US_REGIONS[state],
-    };
-  }
 
   return {
     key: countryKey,
     label: country,
+  };
+}
+
+function getRegionClusterDescriptor(
+  team: PositionedTeam,
+): RegionClusterDescriptor | null {
+  const country = normalizeClusterPart(team.location.country) || "Unknown";
+  const region = normalizeClusterPart(team.location.state);
+  const countryKey = normalizeClusterKey(country);
+  const regionKey = normalizeClusterKey(region);
+
+  if (!regionKey) {
+    return null;
+  }
+
+  return {
+    key: `${countryKey}:${regionKey}`,
+    label: region,
+    countryKey,
   };
 }
 
@@ -423,19 +561,24 @@ function getAveragePosition(teams: PositionedTeam[]): [number, number] {
   return [totals.lat / teams.length, totals.lng / teams.length];
 }
 
-function isUnitedStates(country: string) {
-  const countryKey = normalizeClusterKey(country);
+function shouldAggregateRegionGroup(
+  group: {
+    countryKey: string;
+    teams: PositionedTeam[];
+    cityKeys: Set<string>;
+  },
+  countryRegionKeys: Map<string, Set<string>>,
+) {
+  const countryRegionCount = countryRegionKeys.get(group.countryKey)?.size ?? 0;
 
   return (
-    countryKey === "usa" ||
-    countryKey === "us" ||
-    countryKey === "united states" ||
-    countryKey === "united states of america"
+    group.teams.length >= MIN_REGION_CLUSTER_TEAMS &&
+    countryRegionCount > 1 &&
+    group.cityKeys.size !== 1
   );
 }
 
-function getClusterSummary(cluster: L.MarkerCluster, zoom: number) {
-  const level = getClusterLevel(zoom);
+function getClusterSummary(cluster: L.MarkerCluster, level: ClusterLevel) {
   const teams = cluster
     .getAllChildMarkers()
     .map((marker) => (marker as TeamMarker).team)
@@ -496,7 +639,7 @@ function getClusterLocationValue(
     case "country":
       return team.location.country;
     case "region":
-      return team.homeRegion || team.location.state || team.location.country;
+      return team.location.state || team.location.country;
     case "city":
       return team.location.city || team.location.state || team.location.country;
   }
@@ -509,7 +652,7 @@ function getClusterFallbackLabel(level: ClusterLevel) {
     case "country":
       return "Countries";
     case "region":
-      return "Regions";
+      return "States/Provinces";
     case "city":
       return "Cities";
   }
