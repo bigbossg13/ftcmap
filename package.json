@@ -7,6 +7,7 @@
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
     "preview": "vite preview",
+    "sync:ftcscout": "node scripts/sync-ftcscout-teams.mjs",
     "sync:ftc": "node scripts/sync-ftc-official-teams.mjs",
     "sync:geocodes": "node scripts/geocode-team-locations.mjs"
   },

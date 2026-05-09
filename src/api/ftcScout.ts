@@ -9,6 +9,7 @@ import {
   mergeTeamGeocodes,
   type TeamCoordinates,
 } from "./teamGeocodes";
+import { fetchFtcScoutTeamCache } from "./ftcScoutCache";
 
 export type TeamLocation = {
   city: string;
@@ -35,15 +36,19 @@ export type FtcTeam = {
 export type TeamFetchResult = {
   teams: FtcTeam[];
   season: number;
-  source: "graphql" | "rest-fallback" | "official-ftc-cache";
+  source:
+    | "graphql"
+    | "rest-fallback"
+    | "official-ftc-cache"
+    | "ftcscout-cache";
   officialData?: OfficialFtcMetadata;
 };
 
 const FTC_SCOUT_GRAPHQL_URL = "https://api.ftcscout.org/graphql";
 const FTC_SCOUT_REST_TEAMS_URL =
   "https://api.ftcscout.org/rest/v1/teams/search?limit=30000";
-const GRAPHQL_TIMEOUT_MS = 20000;
-const REST_TIMEOUT_MS = 60000;
+const GRAPHQL_TIMEOUT_MS = 8000;
+const REST_TIMEOUT_MS = 15000;
 const REST_RETRY_DELAY_MS = 1500;
 
 const TEAMS_QUERY = `
@@ -100,9 +105,14 @@ export async function fetchActiveTeams(): Promise<TeamFetchResult> {
     console.warn("Team geocode cache could not be loaded.", error);
     return null;
   });
-  const [officialCache, geocodeCache] = await Promise.all([
+  const scoutCachePromise = fetchFtcScoutTeamCache(season).catch((error) => {
+    console.warn("FTCScout team cache could not be loaded.", error);
+    return null;
+  });
+  const [officialCache, geocodeCache, scoutCache] = await Promise.all([
     officialCachePromise,
     geocodeCachePromise,
+    scoutCachePromise,
   ]);
 
   if (officialCache?.teams.length) {
@@ -114,6 +124,14 @@ export async function fetchActiveTeams(): Promise<TeamFetchResult> {
       season,
       source: "official-ftc-cache",
       officialData: getOfficialFtcMetadata(officialCache),
+    };
+  }
+
+  if (scoutCache?.teams.length) {
+    return {
+      teams: mergeTeamGeocodes(scoutCache.teams, geocodeCache),
+      season,
+      source: "ftcscout-cache",
     };
   }
 

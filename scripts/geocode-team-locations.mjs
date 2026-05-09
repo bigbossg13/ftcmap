@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 const FTC_SCOUT_REST_TEAMS_URL =
   "https://api.ftcscout.org/rest/v1/teams/search?limit=30000";
 const OFFICIAL_TEAMS_PATH = resolve("public/ftc-official-teams.json");
+const FTCSCOUT_TEAMS_PATH = resolve("public/ftcscout-teams.json");
 const OUTPUT_PATH = resolve("public/team-geocodes.json");
 const NOMINATIM_URL = "https://nominatim.openstreetmap.org/search";
 const REQUEST_DELAY_MS = Number(process.env.GEOCODE_DELAY_MS ?? 1100);
@@ -84,6 +85,18 @@ async function readTeamSource() {
       city: team.city,
       state: team.state,
       country: team.country,
+    }));
+  }
+
+  if (existsSync(FTCSCOUT_TEAMS_PATH)) {
+    const cache = JSON.parse(await readFile(FTCSCOUT_TEAMS_PATH, "utf8"));
+    const teams = Array.isArray(cache.teams) ? cache.teams : [];
+
+    return teams.map((team) => ({
+      number: team.number,
+      city: team.location?.city,
+      state: team.location?.state,
+      country: team.location?.country,
     }));
   }
 
