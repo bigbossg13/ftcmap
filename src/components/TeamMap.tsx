@@ -33,6 +33,10 @@ type ClusterDescriptor = {
   label: string;
 };
 
+type RegionClusterDescriptor = ClusterDescriptor & {
+  countryKey: string;
+};
+
 type RegionClusterPlan = {
   groups: AggregateClusterGroup[];
   passthroughTeams: PositionedTeam[];
@@ -88,6 +92,8 @@ const COUNTRY_CONTINENTS: Record<string, string> = {
   uzbekistan: "Asia",
   vietnam: "Asia",
 };
+
+const MIN_REGION_CLUSTER_TEAMS = 2;
 
 export default function TeamMap({ teams }: TeamMapProps) {
   return (
@@ -146,6 +152,13 @@ function TeamMarkerLayer({ teams }: TeamMapProps) {
 
   useEffect(() => {
     const cityLayer = L.markerClusterGroup({
+      chunkedLoading: true,
+      maxClusterRadius: getClusterRadius,
+      showCoverageOnHover: false,
+      spiderfyOnMaxZoom: true,
+      iconCreateFunction: (cluster) => createClusterIcon(cluster, "city"),
+    });
+    const regionPassthroughLayer = L.markerClusterGroup({
       chunkedLoading: true,
       maxClusterRadius: getClusterRadius,
       showCoverageOnHover: false,
@@ -407,6 +420,13 @@ function buildRegionClusterPlan(teams: PositionedTeam[]): RegionClusterPlan {
       teams: PositionedTeam[];
     }
   >();
+      countryKey: string;
+      label: string;
+      teams: PositionedTeam[];
+      cityKeys: Set<string>;
+    }
+  >();
+  const countryRegionKeys = new Map<string, Set<string>>();
   const passthroughTeams: PositionedTeam[] = [];
 
   teams.forEach((team) => {
@@ -424,11 +444,34 @@ function buildRegionClusterPlan(teams: PositionedTeam[]): RegionClusterPlan {
 
     group.teams.push(team);
     groups.set(descriptor.key, group);
+      countryKey: descriptor.countryKey,
+      label: descriptor.label,
+      teams: [],
+      cityKeys: new Set<string>(),
+    };
+    const countryRegions =
+      countryRegionKeys.get(descriptor.countryKey) ?? new Set<string>();
+    const cityKey = normalizeClusterKey(team.location.city);
+
+    group.teams.push(team);
+
+    if (cityKey) {
+      group.cityKeys.add(cityKey);
+    }
+
+    countryRegions.add(descriptor.key);
+    groups.set(descriptor.key, group);
+    countryRegionKeys.set(descriptor.countryKey, countryRegions);
   });
 
   const aggregateGroups: AggregateClusterGroup[] = [];
 
   groups.forEach((group) => {
+    if (!shouldAggregateRegionGroup(group, countryRegionKeys)) {
+      passthroughTeams.push(...group.teams);
+      return;
+    }
+
     const bounds = L.latLngBounds(group.teams.map((team) => team.position));
     const position = getAveragePosition(group.teams);
 
@@ -485,6 +528,7 @@ function getCountryClusterDescriptor(team: PositionedTeam): ClusterDescriptor {
 function getRegionClusterDescriptor(
   team: PositionedTeam,
 ): ClusterDescriptor | null {
+): RegionClusterDescriptor | null {
   const country = normalizeClusterPart(team.location.country) || "Unknown";
   const region = normalizeClusterPart(team.location.state);
   const countryKey = normalizeClusterKey(country);
@@ -497,6 +541,7 @@ function getRegionClusterDescriptor(
   return {
     key: `${countryKey}:${regionKey}`,
     label: region,
+    countryKey,
   };
 }
 
@@ -532,6 +577,23 @@ function getAveragePosition(teams: PositionedTeam[]): [number, number] {
   );
 
   return [totals.lat / teams.length, totals.lng / teams.length];
+}
+
+function shouldAggregateRegionGroup(
+  group: {
+    countryKey: string;
+    teams: PositionedTeam[];
+    cityKeys: Set<string>;
+  },
+  countryRegionKeys: Map<string, Set<string>>,
+) {
+  const countryRegionCount = countryRegionKeys.get(group.countryKey)?.size ?? 0;
+
+  return (
+    group.teams.length >= MIN_REGION_CLUSTER_TEAMS &&
+    countryRegionCount > 1 &&
+    group.cityKeys.size !== 1
+  );
 }
 
 function getClusterSummary(cluster: L.MarkerCluster, level: ClusterLevel) {
