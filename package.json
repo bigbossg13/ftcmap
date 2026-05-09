@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "vite",
     "build": "tsc --noEmit && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "sync:ftc": "node scripts/sync-ftc-official-teams.mjs"
   },
   "repository": {
     "type": "git",

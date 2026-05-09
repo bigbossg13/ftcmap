@@ -1,3 +1,10 @@
+import {
+  fetchOfficialFtcTeamCache,
+  getOfficialFtcMetadata,
+  mergeOfficialFtcTeams,
+  type OfficialFtcMetadata,
+} from "./officialFtc";
+
 export type TeamLocation = {
   city: string;
   state: string;
@@ -12,13 +19,18 @@ export type FtcTeam = {
   website?: string | null;
   activeSeasons?: number[];
   updatedAt?: string;
+  robotName?: string;
+  homeRegion?: string;
+  displayLocation?: string;
+  logoUrl?: string;
   location: TeamLocation;
 };
 
 export type TeamFetchResult = {
   teams: FtcTeam[];
   season: number;
-  source: "graphql" | "rest-fallback";
+  source: "graphql" | "rest-fallback" | "official-ftc-cache";
+  officialData?: OfficialFtcMetadata;
 };
 
 const FTC_SCOUT_GRAPHQL_URL = "https://api.ftcscout.org/graphql";
@@ -71,6 +83,13 @@ export function getFtcScoutProfileUrl(teamNumber: number) {
 
 export async function fetchActiveTeams(): Promise<TeamFetchResult> {
   const season = getCurrentFtcSeason();
+  const officialCachePromise = fetchOfficialFtcTeamCache(season).catch((error) => {
+    console.warn("Official FTC team cache could not be loaded.", error);
+    return null;
+  });
+  let scoutTeams: FtcTeam[] = [];
+  let scoutSource: TeamFetchResult["source"] = "rest-fallback";
+  let scoutError: unknown = null;
 
   try {
     const graphQlTeams = await fetchTeamsFromGraphQl();
@@ -79,17 +98,41 @@ export async function fetchActiveTeams(): Promise<TeamFetchResult> {
     );
 
     if (activeTeams.length > 0) {
-      return { teams: activeTeams, season, source: "graphql" };
+      scoutTeams = activeTeams;
+      scoutSource = "graphql";
     }
   } catch (error) {
     console.warn("FTCScout GraphQL team fetch failed; using REST fallback.", error);
+    scoutError = error;
   }
 
-  return {
-    teams: await fetchTeamsFromRest(season),
-    season,
-    source: "rest-fallback",
-  };
+  if (scoutTeams.length === 0) {
+    try {
+      scoutTeams = await fetchTeamsFromRest(season);
+      scoutSource = "rest-fallback";
+    } catch (error) {
+      scoutError = error;
+    }
+  }
+
+  const officialCache = await officialCachePromise;
+
+  if (officialCache?.teams.length) {
+    return {
+      teams: mergeOfficialFtcTeams(officialCache.teams, scoutTeams),
+      season,
+      source: "official-ftc-cache",
+      officialData: getOfficialFtcMetadata(officialCache),
+    };
+  }
+
+  if (scoutTeams.length > 0) {
+    return { teams: scoutTeams, season, source: scoutSource };
+  }
+
+  throw scoutError instanceof Error
+    ? scoutError
+    : new Error("Unable to load FTC team data.");
 }
 
 async function fetchTeamsFromGraphQl() {
