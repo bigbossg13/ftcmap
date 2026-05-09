@@ -6,7 +6,8 @@ using FTCScout API data, with optional official FTC Events API enrichment.
 ## Features
 
 - Fetches FTC team data from FTCScout.
-- Uses FTCScout GraphQL active seasons when available, with a REST fallback.
+- Uses FTCScout event participation data so the bundled cache is filtered to
+  teams that appear on 2025 DECODE event rosters.
 - Ships with a generated FTCScout team cache so the map can render without
   waiting on live FTCScout API calls.
 - Optionally enriches the current-season roster from the official FTC Events
@@ -61,7 +62,8 @@ refresh the bundled FTCScout team cache:
 npm run sync:ftcscout
 ```
 
-This writes `public/ftcscout-teams.json`.
+This writes `public/ftcscout-teams.json`, filtered to teams that appear on FTCScout
+event team lists for the selected season.
 
 ## Refreshing geocoded coordinates
 
