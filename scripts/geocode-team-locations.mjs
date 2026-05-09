@@ -13,6 +13,9 @@ const USER_AGENT =
   process.env.GEOCODE_USER_AGENT ??
   "ftcmap/1.0 geocoder (https://github.com/bigbossg13/ftcmap)";
 const CONTACT_EMAIL = process.env.GEOCODE_EMAIL;
+const FLUSH_EVERY_SUCCESSFUL_GEOCODES = Number(
+  process.env.GEOCODE_FLUSH_EVERY ?? 25,
+);
 
 const existingCache = await readExistingCache();
 const existingByLocation = new Map(
@@ -23,6 +26,7 @@ const existingByLocation = new Map(
 const teams = await readTeamSource();
 const geocodes = [];
 let lastRequestAt = 0;
+let successfulGeocodesSinceFlush = 0;
 
 for (const team of teams) {
   const query = formatLocationQuery(team);
@@ -60,20 +64,30 @@ for (const team of teams) {
 
   geocodes.push(geocodeRecord);
   existingByLocation.set(normalizeLocationKey(query), geocodeRecord);
+  successfulGeocodesSinceFlush += 1;
+
+  if (successfulGeocodesSinceFlush >= FLUSH_EVERY_SUCCESSFUL_GEOCODES) {
+    await writeCache();
+    successfulGeocodesSinceFlush = 0;
+  }
 }
 
-const cache = {
-  generatedAt: new Date().toISOString(),
-  teamCount: geocodes.length,
-  teams: geocodes.sort((a, b) => a.number - b.number),
-};
-
-await writeFile(`${OUTPUT_PATH}.tmp`, `${JSON.stringify(cache, null, 2)}\n`);
-await rename(`${OUTPUT_PATH}.tmp`, OUTPUT_PATH);
+await writeCache();
 
 console.log(
   `Wrote ${geocodes.length.toLocaleString()} geocoded team locations to ${OUTPUT_PATH}`,
 );
+
+async function writeCache() {
+  const cache = {
+    generatedAt: new Date().toISOString(),
+    teamCount: geocodes.length,
+    teams: [...geocodes].sort((a, b) => a.number - b.number),
+  };
+
+  await writeFile(`${OUTPUT_PATH}.tmp`, `${JSON.stringify(cache)}\n`);
+  await rename(`${OUTPUT_PATH}.tmp`, OUTPUT_PATH);
+}
 
 async function readTeamSource() {
   if (existsSync(OFFICIAL_TEAMS_PATH)) {

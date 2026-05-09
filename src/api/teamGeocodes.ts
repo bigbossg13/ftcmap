@@ -70,6 +70,38 @@ export function mergeTeamGeocodes(
   });
 }
 
+export function buildGeocodedTeams(
+  teams: FtcTeam[],
+  cache: TeamGeocodeCache | null,
+) {
+  if (!cache) {
+    return [];
+  }
+
+  const teamByNumber = new Map(teams.map((team) => [team.number, team] as const));
+  const geocodedTeams: FtcTeam[] = [];
+
+  cache.teams.filter(hasValidCoordinates).forEach((geocode) => {
+    const team = teamByNumber.get(geocode.number);
+
+    if (!team) {
+      return;
+    }
+
+    geocodedTeams.push({
+      ...team,
+      coordinates: {
+        lat: geocode.lat,
+        lng: geocode.lng,
+        source: geocode.source,
+        query: geocode.query,
+      },
+    });
+  });
+
+  return geocodedTeams;
+}
+
 function hasValidCoordinates(
   geocode: TeamGeocodeRecord,
 ): geocode is TeamGeocodeRecord {
