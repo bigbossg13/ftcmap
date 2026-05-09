@@ -1,4 +1,5 @@
 import type { FtcTeam, TeamLocation } from "./ftcScout";
+import type { TeamCoordinates } from "./teamGeocodes";
 
 export type OfficialFtcTeam = {
   number: number;
@@ -13,6 +14,7 @@ export type OfficialFtcTeam = {
   homeRegion?: string;
   displayLocation?: string;
   logoUrl?: string;
+  coordinates?: TeamCoordinates;
 };
 
 export type OfficialFtcTeamCache = {
@@ -102,6 +104,7 @@ function mergeTeamData(
     homeRegion: officialTeam.homeRegion || scoutTeam?.homeRegion,
     displayLocation: officialTeam.displayLocation || scoutTeam?.displayLocation,
     logoUrl: officialTeam.logoUrl || scoutTeam?.logoUrl,
+    coordinates: officialTeam.coordinates || scoutTeam?.coordinates,
     location: officialLocation ?? scoutTeam?.location ?? emptyLocation(),
   };
 }

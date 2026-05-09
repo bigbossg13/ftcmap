@@ -4,6 +4,11 @@ import {
   mergeOfficialFtcTeams,
   type OfficialFtcMetadata,
 } from "./officialFtc";
+import {
+  fetchTeamGeocodeCache,
+  mergeTeamGeocodes,
+  type TeamCoordinates,
+} from "./teamGeocodes";
 
 export type TeamLocation = {
   city: string;
@@ -23,6 +28,7 @@ export type FtcTeam = {
   homeRegion?: string;
   displayLocation?: string;
   logoUrl?: string;
+  coordinates?: TeamCoordinates;
   location: TeamLocation;
 };
 
@@ -90,6 +96,10 @@ export async function fetchActiveTeams(): Promise<TeamFetchResult> {
     console.warn("Official FTC team cache could not be loaded.", error);
     return null;
   });
+  const geocodeCachePromise = fetchTeamGeocodeCache().catch((error) => {
+    console.warn("Team geocode cache could not be loaded.", error);
+    return null;
+  });
   let scoutTeams: FtcTeam[] = [];
   let scoutSource: TeamFetchResult["source"] = "rest-fallback";
   let scoutError: unknown = null;
@@ -119,10 +129,14 @@ export async function fetchActiveTeams(): Promise<TeamFetchResult> {
   }
 
   const officialCache = await officialCachePromise;
+  const geocodeCache = await geocodeCachePromise;
 
   if (officialCache?.teams.length) {
     return {
-      teams: mergeOfficialFtcTeams(officialCache.teams, scoutTeams),
+      teams: mergeTeamGeocodes(
+        mergeOfficialFtcTeams(officialCache.teams, scoutTeams),
+        geocodeCache,
+      ),
       season,
       source: "official-ftc-cache",
       officialData: getOfficialFtcMetadata(officialCache),
@@ -130,7 +144,11 @@ export async function fetchActiveTeams(): Promise<TeamFetchResult> {
   }
 
   if (scoutTeams.length > 0) {
-    return { teams: scoutTeams, season, source: scoutSource };
+    return {
+      teams: mergeTeamGeocodes(scoutTeams, geocodeCache),
+      season,
+      source: scoutSource,
+    };
   }
 
   throw scoutError instanceof Error
