@@ -81,6 +81,74 @@ const CANADA_REGION_CENTERS: Record<string, [number, number]> = {
   YT: [64.2823, -135],
 };
 
+const REGION_ALIASES: Record<string, string> = {
+  ALABAMA: "AL",
+  ALASKA: "AK",
+  ARIZONA: "AZ",
+  ARKANSAS: "AR",
+  CALIFORNIA: "CA",
+  COLORADO: "CO",
+  CONNECTICUT: "CT",
+  DELAWARE: "DE",
+  DISTRICT_OF_COLUMBIA: "DC",
+  FLORIDA: "FL",
+  GEORGIA: "GA",
+  HAWAII: "HI",
+  IDAHO: "ID",
+  ILLINOIS: "IL",
+  INDIANA: "IN",
+  IOWA: "IA",
+  KANSAS: "KS",
+  KENTUCKY: "KY",
+  LOUISIANA: "LA",
+  MAINE: "ME",
+  MARYLAND: "MD",
+  MASSACHUSETTS: "MA",
+  MICHIGAN: "MI",
+  MINNESOTA: "MN",
+  MISSISSIPPI: "MS",
+  MISSOURI: "MO",
+  MONTANA: "MT",
+  NEBRASKA: "NE",
+  NEVADA: "NV",
+  NEW_HAMPSHIRE: "NH",
+  NEW_JERSEY: "NJ",
+  NEW_MEXICO: "NM",
+  NEW_YORK: "NY",
+  NORTH_CAROLINA: "NC",
+  NORTH_DAKOTA: "ND",
+  OHIO: "OH",
+  OKLAHOMA: "OK",
+  OREGON: "OR",
+  PENNSYLVANIA: "PA",
+  PUERTO_RICO: "PR",
+  RHODE_ISLAND: "RI",
+  SOUTH_CAROLINA: "SC",
+  SOUTH_DAKOTA: "SD",
+  TENNESSEE: "TN",
+  TEXAS: "TX",
+  UTAH: "UT",
+  VERMONT: "VT",
+  VIRGINIA: "VA",
+  WASHINGTON: "WA",
+  WEST_VIRGINIA: "WV",
+  WISCONSIN: "WI",
+  WYOMING: "WY",
+  ALBERTA: "AB",
+  BRITISH_COLUMBIA: "BC",
+  MANITOBA: "MB",
+  NEW_BRUNSWICK: "NB",
+  NEWFOUNDLAND_AND_LABRADOR: "NL",
+  NOVA_SCOTIA: "NS",
+  NORTHWEST_TERRITORIES: "NT",
+  NUNAVUT: "NU",
+  ONTARIO: "ON",
+  PRINCE_EDWARD_ISLAND: "PE",
+  QUEBEC: "QC",
+  SASKATCHEWAN: "SK",
+  YUKON: "YT",
+};
+
 const COUNTRY_CENTERS: Record<string, [number, number]> = {
   ARGENTINA: [-38.4161, -63.6167],
   AUSTRALIA: [-25.2744, 133.7751],
@@ -182,7 +250,7 @@ export function positionTeam(team: FtcTeam): PositionedTeam {
 
 function getRegionLookup(team: FtcTeam): RegionLookup {
   const countryKey = normalizeKey(team.location.country);
-  const stateKey = normalizeKey(team.location.state);
+  const stateKey = getCanonicalRegionKey(team.location.state);
 
   if (isUnitedStates(countryKey) && US_REGION_CENTERS[stateKey]) {
     return {
@@ -220,6 +288,12 @@ function getTeamOffset(teamNumber: number, precision: PositionedTeam["locationPr
 
 function normalizeKey(value: string) {
   return value.trim().toUpperCase().replace(/[\s-]+/g, "_");
+}
+
+function getCanonicalRegionKey(value: string) {
+  const regionKey = normalizeKey(value);
+
+  return REGION_ALIASES[regionKey] ?? regionKey;
 }
 
 function isUnitedStates(countryKey: string) {

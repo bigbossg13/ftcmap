@@ -119,15 +119,41 @@ function renderTeamPopup(team: PositionedTeam) {
 
   return `
     <article class="team-popup-card">
+      ${renderTeamLogo(team)}
       <span class="team-popup-number">FTC ${escapeHtml(String(team.number))}</span>
       <h3 class="team-popup-title">${escapeHtml(team.name)}</h3>
       <p class="team-popup-location">${escapeHtml(location || "Location unavailable")}</p>
+      ${team.robotName ? `<p class="team-popup-location">Robot: ${escapeHtml(team.robotName)}</p>` : ""}
+      ${team.homeRegion ? `<p class="team-popup-location">Region: ${escapeHtml(team.homeRegion)}</p>` : ""}
       <p class="team-popup-location">${precision}</p>
       <a class="team-popup-link" href="${getFtcScoutProfileUrl(
         team.number,
       )}" target="_blank" rel="noreferrer">View FTCScout profile</a>
     </article>
   `;
+}
+
+function renderTeamLogo(team: PositionedTeam) {
+  if (team.logoUrl) {
+    return `<img class="team-popup-logo" src="${escapeHtml(
+      team.logoUrl,
+    )}" alt="${escapeHtml(team.name)} logo" loading="lazy" />`;
+  }
+
+  return `<div class="team-popup-logo team-popup-logo-fallback">${getInitials(
+    team.name,
+  )}</div>`;
+}
+
+function getInitials(name: string) {
+  const initials = name
+    .split(/\s+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part[0]?.toUpperCase())
+    .join("");
+
+  return escapeHtml(initials || "FTC");
 }
 
 function escapeHtml(value: string) {

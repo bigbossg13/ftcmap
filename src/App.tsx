@@ -64,6 +64,7 @@ export default function App() {
     return {
       countries: countries.size,
       regions: regions.size,
+      logos: positionedTeams.filter((team) => team.logoUrl).length,
       approximate:
         positionedTeams.filter((team) => team.locationPrecision === "country")
           .length,
@@ -73,6 +74,11 @@ export default function App() {
   const season = loadState.status === "ready" ? loadState.result.season : null;
   const isRestFallback =
     loadState.status === "ready" && loadState.result.source === "rest-fallback";
+  const isOfficialCache =
+    loadState.status === "ready" &&
+    loadState.result.source === "official-ftc-cache";
+  const officialData =
+    loadState.status === "ready" ? loadState.result.officialData : undefined;
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-slate-950 text-slate-100">
@@ -82,7 +88,7 @@ export default function App() {
         <header className="flex flex-col gap-5 rounded-[2rem] border border-cyan-300/10 bg-slate-950/75 p-5 shadow-2xl shadow-black/30 backdrop-blur-xl lg:flex-row lg:items-end lg:justify-between">
           <div>
             <div className="mb-3 inline-flex items-center gap-2 rounded-full border border-cyan-300/20 bg-cyan-300/10 px-3 py-1 text-xs font-bold uppercase tracking-[0.22em] text-cyan-200">
-              FTCScout live data
+              {isOfficialCache ? "FTCScout + official FTC data" : "FTCScout live data"}
             </div>
             <h1 className="text-4xl font-black tracking-tight text-white sm:text-5xl">
               FTC Team Map
@@ -93,7 +99,7 @@ export default function App() {
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-4 lg:min-w-[38rem]">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-5 lg:min-w-[44rem]">
             <StatCard
               label={season ? `${season} teams` : "Teams"}
               value={
@@ -104,6 +110,7 @@ export default function App() {
             />
             <StatCard label="Countries" value={formatStat(stats.countries)} />
             <StatCard label="Regions" value={formatStat(stats.regions)} />
+            <StatCard label="Logos" value={formatStat(stats.logos)} />
             <StatCard label="Approx." value={formatStat(stats.approximate)} />
           </div>
         </header>
@@ -125,20 +132,29 @@ export default function App() {
 
             <div className="mt-6 space-y-3">
               <InfoPanel title="Data source">
-                Teams are fetched directly from the FTCScout API. The app uses
-                the GraphQL active-season field when available and falls back to
-                the REST team directory if GraphQL is unavailable.
+                Teams are fetched from FTCScout. If a build-time official FTC
+                Events API cache is present, it becomes the current-season
+                roster and enriches team city, state, country, robot name, and
+                any logo URL fields available in the cache.
               </InfoPanel>
               <InfoPanel title="Location precision">
-                FTCScout exposes city, state, and country text but no latitude
-                or longitude, so markers are placed on regional or country
-                centroids with deterministic spreading.
+                FTCScout and official FTC Events data expose city, state, and
+                country text but no latitude or longitude, so markers are placed
+                on regional or country centroids with deterministic spreading.
               </InfoPanel>
               {isRestFallback ? (
                 <div className="rounded-2xl border border-amber-300/20 bg-amber-300/10 p-4 text-sm leading-6 text-amber-100">
                   Active-season filtering is estimated from current-season
                   FTCScout record updates because GraphQL active seasons were
                   unavailable.
+                </div>
+              ) : null}
+              {officialData ? (
+                <div className="rounded-2xl border border-emerald-300/20 bg-emerald-300/10 p-4 text-sm leading-6 text-emerald-100">
+                  Official FTC cache loaded{" "}
+                  {officialData.teamCount.toLocaleString()} season teams with{" "}
+                  {officialData.locationCount.toLocaleString()} official
+                  locations.
                 </div>
               ) : null}
               {loadState.status === "error" ? (
