@@ -120,6 +120,8 @@ const REGION_ALIASES = {
   SASKATCHEWAN: "SK",
   YUKON: "YT",
 };
+const countryDisplayNames = new Intl.DisplayNames(["en"], { type: "region" });
+const countryCodeByName = buildCountryCodeByName(cities);
 const cityIndex = buildCityIndex(cities);
 
 const existingCache = await readExistingCache();
@@ -258,14 +260,16 @@ async function readExistingCache() {
 }
 
 function geocodeOffline(location) {
-  const cityKey = normalizeLocationKey(location.city);
+  const cityKeys = getCityKeyCandidates(location.city);
   const countryCode = toCountryCode(location.country);
 
-  if (!cityKey || !countryCode) {
+  if (cityKeys.length === 0 || !countryCode) {
     return null;
   }
 
-  const candidates = cityIndex.get(`${countryCode}:${cityKey}`) ?? [];
+  const candidates = cityKeys.flatMap(
+    (cityKey) => cityIndex.get(`${countryCode}:${cityKey}`) ?? [],
+  );
   const stateKey = toRegionCode(location.state);
   const stateMatches = stateKey
     ? candidates.filter((city) => normalizeLocationKey(city.adminCode) === stateKey)
@@ -375,11 +379,17 @@ function buildCityIndex(cityList) {
       return;
     }
 
-    const key = `${city.country}:${normalizeLocationKey(city.name)}`;
-    const matches = index.get(key) ?? [];
+    getCityKeyCandidates(city.name).forEach((cityKey) => {
+      addCityToIndex(index, `${city.country}:${cityKey}`, city);
+    });
 
-    matches.push(city);
-    index.set(key, matches);
+    normalizeLocationPart(city.altName)
+      .split(",")
+      .map(getCityKeyCandidates)
+      .flat()
+      .forEach((cityKey) => {
+        addCityToIndex(index, `${city.country}:${cityKey}`, city);
+      });
   });
 
   index.forEach((matches) => {
@@ -389,11 +399,22 @@ function buildCityIndex(cityList) {
   return index;
 }
 
+function addCityToIndex(index, key, city) {
+  const matches = index.get(key) ?? [];
+
+  if (!matches.includes(city)) {
+    matches.push(city);
+  }
+
+  index.set(key, matches);
+}
+
 function toCountryCode(country) {
   const countryKey = normalizeLocationKey(country).toUpperCase().replace(/\s+/g, "_");
 
   return (
     COUNTRY_ALIASES[countryKey] ??
+    countryCodeByName.get(normalizeLocationKey(country)) ??
     (countryKey.length === 2 ? countryKey : undefined)
   );
 }
@@ -402,5 +423,50 @@ function toRegionCode(state) {
   const stateKey = normalizeLocationKey(state).toUpperCase().replace(/\s+/g, "_");
 
   return REGION_ALIASES[stateKey] ?? stateKey;
+}
+
+function getCityKeyCandidates(city) {
+  const cityKey = normalizeLocationKey(city);
+
+  if (!cityKey) {
+    return [];
+  }
+
+  const candidates = new Set([cityKey]);
+
+  if (cityKey.startsWith("the ")) {
+    candidates.add(cityKey.slice(4));
+  } else {
+    candidates.add(`the ${cityKey}`);
+  }
+
+  [" city", " township", " town", " county", " municipality"].forEach((suffix) => {
+    if (cityKey.endsWith(suffix)) {
+      candidates.add(cityKey.slice(0, -suffix.length));
+    }
+  });
+
+  return [...candidates].filter(Boolean);
+}
+
+function buildCountryCodeByName(cityList) {
+  const countryCodes = new Set(cityList.map((city) => city.country).filter(Boolean));
+  const countryMap = new Map();
+
+  countryCodes.forEach((countryCode) => {
+    const displayName = countryDisplayNames.of(countryCode);
+
+    if (displayName) {
+      countryMap.set(normalizeLocationKey(displayName), countryCode);
+    }
+  });
+
+  countryMap.set("czech republic", "CZ");
+  countryMap.set("russia", "RU");
+  countryMap.set("venezuela", "VE");
+  countryMap.set("moldova", "MD");
+  countryMap.set("united arab emirates", "AE");
+
+  return countryMap;
 }
 
