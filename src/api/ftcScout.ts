@@ -4,6 +4,11 @@ import {
   mergeOfficialFtcTeams,
   type OfficialFtcMetadata,
 } from "./officialFtc";
+import {
+  fetchTeamGeocodeCache,
+  mergeTeamGeocodes,
+  type TeamCoordinates,
+} from "./teamGeocodes";
 
 export type TeamLocation = {
   city: string;
@@ -23,6 +28,7 @@ export type FtcTeam = {
   homeRegion?: string;
   displayLocation?: string;
   logoUrl?: string;
+  coordinates?: TeamCoordinates;
   location: TeamLocation;
 };
 
@@ -36,6 +42,9 @@ export type TeamFetchResult = {
 const FTC_SCOUT_GRAPHQL_URL = "https://api.ftcscout.org/graphql";
 const FTC_SCOUT_REST_TEAMS_URL =
   "https://api.ftcscout.org/rest/v1/teams/search?limit=30000";
+const GRAPHQL_TIMEOUT_MS = 20000;
+const REST_TIMEOUT_MS = 60000;
+const REST_RETRY_DELAY_MS = 1500;
 
 const TEAMS_QUERY = `
   query MapTeams($limit: Int) {
@@ -87,6 +96,10 @@ export async function fetchActiveTeams(): Promise<TeamFetchResult> {
     console.warn("Official FTC team cache could not be loaded.", error);
     return null;
   });
+  const geocodeCachePromise = fetchTeamGeocodeCache().catch((error) => {
+    console.warn("Team geocode cache could not be loaded.", error);
+    return null;
+  });
   let scoutTeams: FtcTeam[] = [];
   let scoutSource: TeamFetchResult["source"] = "rest-fallback";
   let scoutError: unknown = null;
@@ -116,10 +129,14 @@ export async function fetchActiveTeams(): Promise<TeamFetchResult> {
   }
 
   const officialCache = await officialCachePromise;
+  const geocodeCache = await geocodeCachePromise;
 
   if (officialCache?.teams.length) {
     return {
-      teams: mergeOfficialFtcTeams(officialCache.teams, scoutTeams),
+      teams: mergeTeamGeocodes(
+        mergeOfficialFtcTeams(officialCache.teams, scoutTeams),
+        geocodeCache,
+      ),
       season,
       source: "official-ftc-cache",
       officialData: getOfficialFtcMetadata(officialCache),
@@ -127,7 +144,11 @@ export async function fetchActiveTeams(): Promise<TeamFetchResult> {
   }
 
   if (scoutTeams.length > 0) {
-    return { teams: scoutTeams, season, source: scoutSource };
+    return {
+      teams: mergeTeamGeocodes(scoutTeams, geocodeCache),
+      season,
+      source: scoutSource,
+    };
   }
 
   throw scoutError instanceof Error
@@ -136,16 +157,20 @@ export async function fetchActiveTeams(): Promise<TeamFetchResult> {
 }
 
 async function fetchTeamsFromGraphQl() {
-  const response = await fetchWithTimeout(FTC_SCOUT_GRAPHQL_URL, 6000, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
+  const response = await fetchWithTimeout(
+    FTC_SCOUT_GRAPHQL_URL,
+    GRAPHQL_TIMEOUT_MS,
+    {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({
+        query: TEAMS_QUERY,
+        variables: { limit: 30000 },
+      }),
     },
-    body: JSON.stringify({
-      query: TEAMS_QUERY,
-      variables: { limit: 30000 },
-    }),
-  });
+  );
 
   if (!response.ok) {
     throw new Error(`FTCScout GraphQL returned ${response.status}`);
@@ -161,7 +186,7 @@ async function fetchTeamsFromGraphQl() {
 }
 
 async function fetchTeamsFromRest(season: number) {
-  const response = await fetchWithTimeout(FTC_SCOUT_REST_TEAMS_URL, 16000);
+  const response = await fetchWithRetry(FTC_SCOUT_REST_TEAMS_URL, REST_TIMEOUT_MS);
 
   if (!response.ok) {
     throw new Error(`FTCScout REST returned ${response.status}`);
@@ -181,16 +206,77 @@ async function fetchWithTimeout(
   init?: RequestInit,
 ) {
   const controller = new AbortController();
-  const timeout = window.setTimeout(() => controller.abort(), timeoutMs);
+  let timedOut = false;
+  const timeout = window.setTimeout(() => {
+    timedOut = true;
+    controller.abort();
+  }, timeoutMs);
 
   try {
     return await fetch(input, {
       ...init,
       signal: controller.signal,
     });
+  } catch (error) {
+    if (timedOut || isAbortError(error)) {
+      throw new Error(
+        `FTCScout took longer than ${Math.round(
+          timeoutMs / 1000,
+        )} seconds to respond. Please try again.`,
+      );
+    }
+
+    throw error;
   } finally {
     window.clearTimeout(timeout);
   }
+}
+
+async function fetchWithRetry(
+  input: RequestInfo | URL,
+  timeoutMs: number,
+  attempts = 2,
+) {
+  let lastError: unknown = null;
+
+  for (let attempt = 1; attempt <= attempts; attempt += 1) {
+    try {
+      return await fetchWithTimeout(input, timeoutMs);
+    } catch (error) {
+      lastError = error;
+
+      if (attempt < attempts && isRetryableFetchError(error)) {
+        await wait(REST_RETRY_DELAY_MS * attempt);
+        continue;
+      }
+
+      throw error;
+    }
+  }
+
+  throw lastError instanceof Error
+    ? lastError
+    : new Error("FTCScout could not be reached.");
+}
+
+function isRetryableFetchError(error: unknown) {
+  if (!(error instanceof Error)) {
+    return false;
+  }
+
+  return (
+    error.name === "TypeError" ||
+    error.name === "AbortError" ||
+    error.message.includes("FTCScout took longer")
+  );
+}
+
+function isAbortError(error: unknown) {
+  return error instanceof DOMException && error.name === "AbortError";
+}
+
+function wait(delayMs: number) {
+  return new Promise((resolve) => window.setTimeout(resolve, delayMs));
 }
 
 function normalizeTeams(teams: Array<GraphQlTeam | RestTeam>): FtcTeam[] {

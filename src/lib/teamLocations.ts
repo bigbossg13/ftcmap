@@ -2,7 +2,7 @@ import type { FtcTeam } from "../api/ftcScout";
 
 export type PositionedTeam = FtcTeam & {
   position: [number, number];
-  locationPrecision: "region" | "country";
+  locationPrecision: "geocoded" | "region" | "country";
 };
 
 type RegionLookup = {
@@ -235,6 +235,17 @@ export function positionTeams(teams: FtcTeam[]) {
 }
 
 export function positionTeam(team: FtcTeam): PositionedTeam {
+  if (team.coordinates) {
+    return {
+      ...team,
+      locationPrecision: "geocoded",
+      position: [
+        clampLatitude(team.coordinates.lat),
+        normalizeLongitude(team.coordinates.lng),
+      ],
+    };
+  }
+
   const lookup = getRegionLookup(team);
   const [latOffset, lngOffset] = getTeamOffset(team.number, lookup.precision);
 

@@ -1,5 +1,6 @@
 import { useEffect } from "react";
 import L from "leaflet";
+import "leaflet.markercluster";
 import { MapContainer, TileLayer, useMap } from "react-leaflet";
 import { getFtcScoutProfileUrl } from "../api/ftcScout";
 import type { PositionedTeam } from "../lib/teamLocations";
@@ -49,22 +50,19 @@ function TeamMarkerLayer({ teams }: TeamMapProps) {
   const map = useMap();
 
   useEffect(() => {
-    const renderer = L.canvas({ padding: 0.5 });
-    const layer = L.layerGroup().addTo(map);
+    const layer = L.markerClusterGroup({
+      chunkedLoading: true,
+      maxClusterRadius: 44,
+      showCoverageOnHover: false,
+      spiderfyOnMaxZoom: true,
+      iconCreateFunction: createClusterIcon,
+    }).addTo(map);
 
     teams.forEach((team) => {
-      const marker = L.circleMarker(team.position, {
-        renderer,
-        radius: team.locationPrecision === "region" ? 4 : 3.4,
-        stroke: true,
-        color: "#67e8f9",
-        weight: 1,
-        opacity: 0.86,
-        fill: true,
-        fillColor: "#22d3ee",
-        fillOpacity: 0.58,
-        bubblingMouseEvents: false,
-      }).addTo(layer);
+      const marker = L.marker(team.position, {
+        icon: createTeamIcon(team),
+        title: `${team.number} ${team.name}`,
+      });
 
       marker.bindPopup(renderTeamPopup(team), {
         className: "team-popup",
@@ -73,23 +71,7 @@ function TeamMarkerLayer({ teams }: TeamMapProps) {
         minWidth: 250,
       });
 
-      marker.on("mouseover", () => {
-        marker.setRadius(7);
-        marker.setStyle({
-          color: "#ffffff",
-          fillColor: "#38bdf8",
-          fillOpacity: 0.95,
-        });
-      });
-
-      marker.on("mouseout", () => {
-        marker.setRadius(team.locationPrecision === "region" ? 4 : 3.4);
-        marker.setStyle({
-          color: "#67e8f9",
-          fillColor: "#22d3ee",
-          fillOpacity: 0.58,
-        });
-      });
+      layer.addLayer(marker);
     });
 
     if (teams.length > 0) {
@@ -108,12 +90,46 @@ function TeamMarkerLayer({ teams }: TeamMapProps) {
   return null;
 }
 
+function createTeamIcon(team: PositionedTeam) {
+  const precisionClass =
+    team.locationPrecision === "geocoded" ? "team-marker--geocoded" : "";
+
+  return L.divIcon({
+    className: "team-marker-icon",
+    html: `<span class="team-marker ${precisionClass}"></span>`,
+    iconSize: [18, 18],
+    iconAnchor: [9, 9],
+    popupAnchor: [0, -10],
+  });
+}
+
+function createClusterIcon(cluster: L.MarkerCluster) {
+  const count = cluster.getChildCount();
+  const sizeClass =
+    count >= 1000
+      ? "team-cluster--xl"
+      : count >= 100
+        ? "team-cluster--lg"
+        : count >= 10
+          ? "team-cluster--md"
+          : "team-cluster--sm";
+
+  return L.divIcon({
+    className: "team-cluster-icon",
+    html: `<div class="team-cluster ${sizeClass}"><span>${count.toLocaleString()}</span></div>`,
+    iconSize: [54, 54],
+    iconAnchor: [27, 27],
+  });
+}
+
 function renderTeamPopup(team: PositionedTeam) {
   const location = [team.location.city, team.location.state, team.location.country]
     .filter(Boolean)
     .join(", ");
   const precision =
-    team.locationPrecision === "region"
+    team.locationPrecision === "geocoded"
+      ? "Geocoded city position"
+      : team.locationPrecision === "region"
       ? "Approximate regional position"
       : "Approximate country position";
 

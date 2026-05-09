@@ -65,6 +65,9 @@ export default function App() {
       countries: countries.size,
       regions: regions.size,
       logos: positionedTeams.filter((team) => team.logoUrl).length,
+      geocoded: positionedTeams.filter(
+        (team) => team.locationPrecision === "geocoded",
+      ).length,
       approximate:
         positionedTeams.filter((team) => team.locationPrecision === "country")
           .length,
@@ -99,7 +102,7 @@ export default function App() {
             </p>
           </div>
 
-          <div className="grid grid-cols-2 gap-3 sm:grid-cols-5 lg:min-w-[44rem]">
+          <div className="grid grid-cols-2 gap-3 sm:grid-cols-6 lg:min-w-[50rem]">
             <StatCard
               label={season ? `${season} teams` : "Teams"}
               value={
@@ -110,6 +113,7 @@ export default function App() {
             />
             <StatCard label="Countries" value={formatStat(stats.countries)} />
             <StatCard label="Regions" value={formatStat(stats.regions)} />
+            <StatCard label="Geocoded" value={formatStat(stats.geocoded)} />
             <StatCard label="Logos" value={formatStat(stats.logos)} />
             <StatCard label="Approx." value={formatStat(stats.approximate)} />
           </div>
@@ -121,7 +125,7 @@ export default function App() {
               <div>
                 <h2 className="text-lg font-extrabold text-white">Map layer</h2>
                 <p className="mt-1 text-sm text-slate-400">
-                  Cyan markers represent FTCScout teams.
+                  Clustered markers represent FTC teams.
                 </p>
               </div>
               <span className="relative flex h-3 w-3">
@@ -139,8 +143,9 @@ export default function App() {
               </InfoPanel>
               <InfoPanel title="Location precision">
                 FTCScout and official FTC Events data expose city, state, and
-                country text but no latitude or longitude, so markers are placed
-                on regional or country centroids with deterministic spreading.
+                country text but no latitude or longitude. If generated
+                geocodes are present, markers use those city-level coordinates;
+                otherwise they fall back to regional or country centroids.
               </InfoPanel>
               {isRestFallback ? (
                 <div className="rounded-2xl border border-amber-300/20 bg-amber-300/10 p-4 text-sm leading-6 text-amber-100">
