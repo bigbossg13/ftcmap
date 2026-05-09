@@ -17,9 +17,10 @@ using FTCScout API data, with optional official FTC Events API enrichment.
 - Uses Tailwind CSS for a dark, frcmap.com-inspired interface.
 
 FTCScout and the official FTC Events API do not expose precise team
-latitude/longitude. If `public/team-geocodes.json` exists, the app uses those
-city-level coordinates; otherwise it falls back to regional or country centroids
-with deterministic spreading.
+latitude/longitude. The fastest path is `public/map-teams.json`, a generated
+cache of only teams with city-level coordinates. Teams without generated
+coordinates are intentionally left off the map instead of being placed at
+approximate regional or country centroids.
 
 ## Development
 
@@ -64,16 +65,22 @@ This writes `public/ftcscout-teams.json`.
 ## Optional geocoded coordinates
 
 To convert team city/state/country text into specific coordinates, generate the
-geocode cache:
+geocode cache and then build the map-ready cache:
 
 ```bash
 npm run sync:geocodes
+npm run build:map-cache
 ```
 
 The script writes `public/team-geocodes.json`. It prefers
 `public/ftc-official-teams.json` if present; otherwise it uses the FTCScout REST
 team list. It reuses existing cached locations and rate-limits Nominatim
 requests, so the first full run can take a while.
+
+`build:map-cache` writes `public/map-teams.json`, a smaller startup cache that
+the app loads before any other data source. The map only renders teams that have
+generated coordinates. Run both commands after refreshing FTCScout or official
+FTC team data.
 
 You can optionally set `GEOCODE_EMAIL` in `.env` before running the script.
 

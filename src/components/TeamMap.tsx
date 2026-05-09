@@ -126,13 +126,6 @@ function renderTeamPopup(team: PositionedTeam) {
   const location = [team.location.city, team.location.state, team.location.country]
     .filter(Boolean)
     .join(", ");
-  const precision =
-    team.locationPrecision === "geocoded"
-      ? "Geocoded city position"
-      : team.locationPrecision === "region"
-      ? "Approximate regional position"
-      : "Approximate country position";
-
   return `
     <article class="team-popup-card">
       ${renderTeamLogo(team)}
@@ -141,7 +134,7 @@ function renderTeamPopup(team: PositionedTeam) {
       <p class="team-popup-location">${escapeHtml(location || "Location unavailable")}</p>
       ${team.robotName ? `<p class="team-popup-location">Robot: ${escapeHtml(team.robotName)}</p>` : ""}
       ${team.homeRegion ? `<p class="team-popup-location">Region: ${escapeHtml(team.homeRegion)}</p>` : ""}
-      <p class="team-popup-location">${precision}</p>
+      <p class="team-popup-location">Mapped from city, state, country</p>
       <a class="team-popup-link" href="${getFtcScoutProfileUrl(
         team.number,
       )}" target="_blank" rel="noreferrer">View FTCScout profile</a>
