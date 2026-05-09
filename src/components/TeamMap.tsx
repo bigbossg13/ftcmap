@@ -97,9 +97,9 @@ function createTeamIcon(team: PositionedTeam) {
   return L.divIcon({
     className: "team-marker-icon",
     html: `<span class="team-marker ${precisionClass}"></span>`,
-    iconSize: [18, 18],
-    iconAnchor: [9, 9],
-    popupAnchor: [0, -10],
+    iconSize: [28, 34],
+    iconAnchor: [14, 32],
+    popupAnchor: [0, -30],
   });
 }
 
