@@ -9,6 +9,9 @@ const OUTPUT_PATH = resolve("public/map-teams.json");
 
 const season = Number(process.env.FTC_EVENTS_SEASON ?? getCurrentFtcSeason());
 const sourceTeams = await readTeamSource();
+if (!existsSync(GEOCODES_PATH)) {
+  throw new Error("No geocode cache found. Run npm run sync:geocodes first.");
+}
 const geocodeCache = await readJson(GEOCODES_PATH);
 const geocodeByTeam = new Map(
   (Array.isArray(geocodeCache?.teams) ? geocodeCache.teams : [])

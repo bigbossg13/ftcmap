@@ -240,7 +240,7 @@ async function fetchWithTimeout(
 ) {
   const controller = new AbortController();
   let timedOut = false;
-  const timeout = window.setTimeout(() => {
+  const timeout = globalThis.setTimeout(() => {
     timedOut = true;
     controller.abort();
   }, timeoutMs);
@@ -261,7 +261,7 @@ async function fetchWithTimeout(
 
     throw error;
   } finally {
-    window.clearTimeout(timeout);
+    globalThis.clearTimeout(timeout);
   }
 }
 
@@ -309,7 +309,7 @@ function isAbortError(error: unknown) {
 }
 
 function wait(delayMs: number) {
-  return new Promise((resolve) => window.setTimeout(resolve, delayMs));
+  return new Promise((resolve) => globalThis.setTimeout(resolve, delayMs));
 }
 
 function normalizeTeams(teams: Array<GraphQlTeam | RestTeam>): FtcTeam[] {

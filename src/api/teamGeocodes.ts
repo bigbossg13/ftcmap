@@ -41,42 +41,58 @@ export function buildGeocodedTeams(
   teams: FtcTeam[],
   cache: TeamGeocodeCache | null,
 ) {
-  if (!cache) {
-    return [];
-  }
+  const geocodeByTeam = new Map(
+    (cache?.teams ?? [])
+      .filter(hasValidGeocodeRecord)
+      .map((geocode) => [geocode.number, geocode] as const),
+  );
 
-  const teamByNumber = new Map(teams.map((team) => [team.number, team] as const));
-  const geocodedTeams: FtcTeam[] = [];
+  return teams.flatMap((team) => {
+    const coordinates = getValidCoordinates(
+      geocodeByTeam.get(team.number) ?? team.coordinates,
+    );
 
-  cache.teams.filter(hasValidCoordinates).forEach((geocode) => {
-    const team = teamByNumber.get(geocode.number);
-
-    if (!team) {
-      return;
+    if (!coordinates) {
+      return [];
     }
 
-    geocodedTeams.push({
-      ...team,
-      coordinates: {
-        lat: geocode.lat,
-        lng: geocode.lng,
-        source: geocode.source,
-        query: geocode.query,
+    return [
+      {
+        ...team,
+        coordinates,
       },
-    });
+    ];
   });
+}
 
-  return geocodedTeams;
+function hasValidGeocodeRecord(
+  geocode: TeamGeocodeRecord,
+): geocode is TeamGeocodeRecord {
+  return typeof geocode.number === "number" && hasValidCoordinates(geocode);
+}
+
+function getValidCoordinates(
+  coordinates: TeamCoordinates | undefined,
+): TeamCoordinates | null {
+  if (!hasValidCoordinates(coordinates)) {
+    return null;
+  }
+
+  return {
+    lat: coordinates.lat,
+    lng: coordinates.lng,
+    source: coordinates.source,
+    query: coordinates.query,
+  };
 }
 
 function hasValidCoordinates(
-  geocode: TeamGeocodeRecord,
-): geocode is TeamGeocodeRecord {
+  coordinates: TeamCoordinates | undefined,
+): coordinates is TeamCoordinates {
   return (
-    typeof geocode.number === "number" &&
-    typeof geocode.lat === "number" &&
-    Number.isFinite(geocode.lat) &&
-    typeof geocode.lng === "number" &&
-    Number.isFinite(geocode.lng)
+    typeof coordinates?.lat === "number" &&
+    Number.isFinite(coordinates.lat) &&
+    typeof coordinates.lng === "number" &&
+    Number.isFinite(coordinates.lng)
   );
 }

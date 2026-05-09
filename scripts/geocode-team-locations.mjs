@@ -22,6 +22,11 @@ const FLUSH_EVERY_SUCCESSFUL_GEOCODES = Number(
   process.env.GEOCODE_FLUSH_EVERY ?? 25,
 );
 const CACHE_STATE_MATCH_MAX_DISTANCE_KM = 50;
+
+if (USE_NOMINATIM && !CONTACT_EMAIL) {
+  throw new Error("Set GEOCODE_EMAIL before enabling GEOCODE_USE_NOMINATIM.");
+}
+
 const COUNTRY_ALIASES = {
   AUS: "AU",
   AUSTRALIA: "AU",
@@ -235,6 +240,10 @@ async function readTeamSource() {
   }
 
   const teams = await response.json();
+
+  if (!Array.isArray(teams)) {
+    throw new Error("FTCScout REST returned an unexpected team payload.");
+  }
 
   return teams.map((team) => ({
     number: team.number,
