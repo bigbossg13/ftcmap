@@ -7,6 +7,8 @@ using FTCScout API data, with optional official FTC Events API enrichment.
 
 - Fetches FTC team data from FTCScout.
 - Uses FTCScout GraphQL active seasons when available, with a REST fallback.
+- Ships with a generated FTCScout team cache so the map can render without
+  waiting on live FTCScout API calls.
 - Optionally enriches the current-season roster from the official FTC Events
   API via a build-time generated cache.
 - Renders clustered Leaflet markers for the team map.
@@ -47,6 +49,17 @@ home region, and any logo URL fields present in the cache.
 The documented FTC Events team schema does not currently expose team logos, but
 the cache and UI support a `logoUrl` field if FIRST adds one later or if a
 generated cache is patched with logo URLs from another authorized source.
+
+## Refreshing the FTCScout cache
+
+The app first tries static JSON cache files in `public/` for fast startup. To
+refresh the bundled FTCScout team cache:
+
+```bash
+npm run sync:ftcscout
+```
+
+This writes `public/ftcscout-teams.json`.
 
 ## Optional geocoded coordinates
 
