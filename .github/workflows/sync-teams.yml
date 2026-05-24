@@ -1,0 +1,58 @@
+name: Sync Team Data
+
+on:
+  schedule:
+    # Run every Monday at 06:00 UTC
+    - cron: "0 6 * * 1"
+  workflow_dispatch:
+    inputs:
+      use_nominatim:
+        description: "Use Nominatim for online geocoding (slower, more accurate)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Sync FTCScout teams
+        run: npm run sync:ftcscout
+        env:
+          FTCSCOUT_USER_AGENT: "ftcmap/1.0 cache generator (https://github.com/bigbossg13/ftcmap)"
+
+      - name: Geocode team locations
+        run: npm run sync:geocodes
+        env:
+          GEOCODE_USE_NOMINATIM: ${{ github.event.inputs.use_nominatim == 'true' && 'true' || 'false' }}
+          GEOCODE_EMAIL: ${{ secrets.GEOCODE_EMAIL }}
+          GEOCODE_USER_AGENT: "ftcmap/1.0 geocoder (https://github.com/bigbossg13/ftcmap)"
+
+      - name: Build map cache
+        run: npm run build:map-cache
+
+      - name: Commit updated cache
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add public/ftcscout-teams.json public/team-geocodes.json public/map-teams.json
+          if git diff --staged --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "chore: sync FTCScout team data"
+            git push
+          fi
