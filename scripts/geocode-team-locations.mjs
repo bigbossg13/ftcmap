@@ -147,6 +147,11 @@ let successfulGeocodesSinceFlush = 0;
 
 for (const team of teams) {
   const location = normalizeLocation(team);
+
+  if (isUngeocodeableLocation(location)) {
+    continue;
+  }
+
   const query = formatLocationQuery(location);
 
   if (!query) {
@@ -536,6 +541,12 @@ function buildCityIndex(cityList) {
 
     getCityKeyCandidates(city.name).forEach((cityKey) => {
       addCityToIndex(index, `${city.country}:${cityKey}`, city);
+      // "Washington, D.C." normalizes to "washington d c"; also index as
+      // "washington" so plain city-name queries still find it.
+      const stripped = stripTrailingAbbreviations(cityKey);
+      if (stripped) {
+        addCityToIndex(index, `${city.country}:${stripped}`, city);
+      }
     });
 
     normalizeLocationPart(city.altName)
@@ -588,6 +599,28 @@ function toNormalizedRegionCode(state) {
   const regionCode = toRegionCode(state);
 
   return regionCode ? normalizeLocationKey(regionCode).toUpperCase() : "";
+}
+
+// "washington d c" → "washington" (strips trailing single-char abbreviation words
+// so cities stored as "Washington, D.C." are also indexed under "Washington").
+// Returns null when no stripping is needed.
+function stripTrailingAbbreviations(cityKey) {
+  const parts = cityKey.split(" ");
+  if (parts.length < 2) return null;
+  let end = parts.length;
+  while (end > 1 && parts[end - 1].length === 1) {
+    end--;
+  }
+  if (end === parts.length) return null;
+  return parts.slice(0, end).join(" ");
+}
+
+// APO/FPO/DPO are US military postal codes for overseas bases. The real
+// coordinates are unknown from this data, so we skip them entirely rather
+// than placing them at a meaningless geocoded location.
+function isUngeocodeableLocation(location) {
+  const city = location.city.toUpperCase();
+  return city === "APO" || city === "FPO" || city === "DPO";
 }
 
 function getCityKeyCandidates(city) {
