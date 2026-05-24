@@ -254,7 +254,7 @@ function normalizeTeams(teams) {
         name: team.name,
         schoolName: normalizeString(team.schoolName),
         rookieYear: typeof team.rookieYear === "number" ? team.rookieYear : undefined,
-        website: typeof team.website === "string" ? team.website : team.website,
+        website: typeof team.website === "string" ? team.website : undefined,
         updatedAt: normalizeString(team.updatedAt),
         location,
       });
