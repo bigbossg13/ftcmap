@@ -1,7 +1,7 @@
 import { mkdir, rename, writeFile } from "node:fs/promises";
 import { dirname, resolve } from "node:path";
 
-const API_BASE_URL = "https://ftc-api.firstinspires.org/v2.0";
+const API_BASE_URL = "https://ftc-events.firstinspires.org/v2.0";
 const OUTPUT_PATH = resolve("public/ftc-official-teams.json");
 
 const season = Number(process.env.FTC_EVENTS_SEASON ?? getCurrentFtcSeason());
