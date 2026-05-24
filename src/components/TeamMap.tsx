@@ -165,13 +165,6 @@ function TeamMarkerLayer({ teams }: TeamMapProps) {
       spiderfyOnMaxZoom: true,
       iconCreateFunction: (cluster) => createClusterIcon(cluster, "city"),
     });
-    const regionPassthroughLayer = L.markerClusterGroup({
-      chunkedLoading: true,
-      maxClusterRadius: getClusterRadius,
-      showCoverageOnHover: false,
-      spiderfyOnMaxZoom: true,
-      iconCreateFunction: (cluster) => createClusterIcon(cluster, "city"),
-    });
     const countryLayer = L.layerGroup();
     const continentLayer = L.layerGroup();
     const regionLayer = L.layerGroup();
@@ -416,10 +409,6 @@ function buildRegionClusterPlan(teams: PositionedTeam[]): RegionClusterPlan {
   const groups = new Map<
     string,
     {
-      label: string;
-      teams: PositionedTeam[];
-    }
-  >();
       countryKey: string;
       label: string;
       teams: PositionedTeam[];
@@ -438,12 +427,6 @@ function buildRegionClusterPlan(teams: PositionedTeam[]): RegionClusterPlan {
     }
 
     const group = groups.get(descriptor.key) ?? {
-      label: descriptor.label,
-      teams: [],
-    };
-
-    group.teams.push(team);
-    groups.set(descriptor.key, group);
       countryKey: descriptor.countryKey,
       label: descriptor.label,
       teams: [],
@@ -527,7 +510,6 @@ function getCountryClusterDescriptor(team: PositionedTeam): ClusterDescriptor {
 
 function getRegionClusterDescriptor(
   team: PositionedTeam,
-): ClusterDescriptor | null {
 ): RegionClusterDescriptor | null {
   const country = normalizeClusterPart(team.location.country) || "Unknown";
   const region = normalizeClusterPart(team.location.state);
