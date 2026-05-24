@@ -134,7 +134,7 @@ async function fetchPlayedTeamNumbers(season) {
     const payload = await fetchGraphQl(eventQuery, {
       region,
       season,
-      limit: 3000,
+      limit: 10000,
     });
 
     return payload.eventsSearch ?? [];
