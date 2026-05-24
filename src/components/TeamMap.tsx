@@ -54,7 +54,7 @@ const COUNTRY_CONTINENTS: Record<string, string> = {
   eswatini: "Africa",
   france: "Europe",
   germany: "Europe",
-  independent: "Independent",
+  independent: "Europe",
   india: "Asia",
   israel: "Asia",
   jamaica: "North America",
