@@ -95,6 +95,34 @@ const COUNTRY_CONTINENTS: Record<string, string> = {
 
 const MIN_REGION_CLUSTER_TEAMS = 2;
 
+const STATE_DISPLAY_NAMES: Record<string, Record<string, string>> = {
+  mexico: {
+    agu: "Aguascalientes", bcn: "Baja California", bcs: "Baja California Sur",
+    cam: "Campeche", chh: "Chihuahua", chs: "Chiapas", cmx: "Ciudad de México",
+    coa: "Coahuila", col: "Colima", dur: "Durango", gua: "Guanajuato",
+    gro: "Guerrero", hid: "Hidalgo", jal: "Jalisco", mex: "Estado de México",
+    mic: "Michoacán", mor: "Morelos", nay: "Nayarit", nle: "Nuevo León",
+    oax: "Oaxaca", pue: "Puebla", que: "Querétaro", roo: "Quintana Roo",
+    sin: "Sinaloa", slp: "San Luis Potosí", son: "Sonora", tab: "Tabasco",
+    tam: "Tamaulipas", tla: "Tlaxcala", ver: "Veracruz", yuc: "Yucatán",
+    zac: "Zacatecas",
+  },
+  brazil: {
+    ac: "Acre", al: "Alagoas", am: "Amazonas", ap: "Amapá", ba: "Bahia",
+    ce: "Ceará", df: "Distrito Federal", es: "Espírito Santo", go: "Goiás",
+    ma: "Maranhão", mg: "Minas Gerais", ms: "Mato Grosso do Sul",
+    mt: "Mato Grosso", pa: "Pará", pb: "Paraíba", pe: "Pernambuco",
+    pi: "Piauí", pr: "Paraná", rj: "Rio de Janeiro", rn: "Rio Grande do Norte",
+    ro: "Rondônia", rr: "Roraima", rs: "Rio Grande do Sul",
+    sc: "Santa Catarina", se: "Sergipe", sp: "São Paulo", to: "Tocantins",
+  },
+  australia: {
+    act: "Australian Capital Territory", nsw: "New South Wales",
+    nt: "Northern Territory", qld: "Queensland", sa: "South Australia",
+    tas: "Tasmania", vic: "Victoria", wa: "Western Australia",
+  },
+};
+
 export default function TeamMap({ teams }: TeamMapProps) {
   return (
     <MapContainer
@@ -152,13 +180,6 @@ function TeamMarkerLayer({ teams }: TeamMapProps) {
 
   useEffect(() => {
     const cityLayer = L.markerClusterGroup({
-      chunkedLoading: true,
-      maxClusterRadius: getClusterRadius,
-      showCoverageOnHover: false,
-      spiderfyOnMaxZoom: true,
-      iconCreateFunction: (cluster) => createClusterIcon(cluster, "city"),
-    });
-    const regionPassthroughLayer = L.markerClusterGroup({
       chunkedLoading: true,
       maxClusterRadius: getClusterRadius,
       showCoverageOnHover: false,
@@ -416,10 +437,6 @@ function buildRegionClusterPlan(teams: PositionedTeam[]): RegionClusterPlan {
   const groups = new Map<
     string,
     {
-      label: string;
-      teams: PositionedTeam[];
-    }
-  >();
       countryKey: string;
       label: string;
       teams: PositionedTeam[];
@@ -438,12 +455,6 @@ function buildRegionClusterPlan(teams: PositionedTeam[]): RegionClusterPlan {
     }
 
     const group = groups.get(descriptor.key) ?? {
-      label: descriptor.label,
-      teams: [],
-    };
-
-    group.teams.push(team);
-    groups.set(descriptor.key, group);
       countryKey: descriptor.countryKey,
       label: descriptor.label,
       teams: [],
@@ -527,7 +538,6 @@ function getCountryClusterDescriptor(team: PositionedTeam): ClusterDescriptor {
 
 function getRegionClusterDescriptor(
   team: PositionedTeam,
-): ClusterDescriptor | null {
 ): RegionClusterDescriptor | null {
   const country = normalizeClusterPart(team.location.country) || "Unknown";
   const region = normalizeClusterPart(team.location.state);
@@ -538,9 +548,11 @@ function getRegionClusterDescriptor(
     return null;
   }
 
+  const displayName = STATE_DISPLAY_NAMES[countryKey]?.[regionKey] ?? region;
+
   return {
     key: `${countryKey}:${regionKey}`,
-    label: region,
+    label: displayName,
     countryKey,
   };
 }
@@ -672,7 +684,7 @@ function getClusterFallbackLabel(level: ClusterLevel) {
     case "region":
       return "States/Provinces";
     case "city":
-      return "Cities";
+      return "Teams";
   }
 }
 
@@ -685,7 +697,7 @@ function normalizeClusterKey(value: string) {
     .toLowerCase()
     .normalize("NFKD")
     .replace(/[\u0300-\u036f]/g, "")
-    .replace(/[^\w\s]/g, " ")
+    .replace(/[^\p{L}\p{N}\s]/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
 }

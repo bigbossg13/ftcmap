@@ -53,14 +53,29 @@ console.log(
 );
 
 async function readTeamSource() {
-  if (existsSync(OFFICIAL_TEAMS_PATH)) {
+  const hasOfficial = existsSync(OFFICIAL_TEAMS_PATH);
+  const hasScout = existsSync(FTCSCOUT_TEAMS_PATH);
+
+  if (hasOfficial && hasScout) {
+    const [officialCache, scoutCache] = await Promise.all([
+      readJson(OFFICIAL_TEAMS_PATH),
+      readJson(FTCSCOUT_TEAMS_PATH),
+    ]);
+
+    return mergeTeamSources(
+      Array.isArray(officialCache?.teams) ? officialCache.teams : [],
+      Array.isArray(scoutCache?.teams) ? scoutCache.teams : [],
+    );
+  }
+
+  if (hasOfficial) {
     const cache = await readJson(OFFICIAL_TEAMS_PATH);
     const teams = Array.isArray(cache?.teams) ? cache.teams : [];
 
     return teams.map(normalizeOfficialTeam).filter(Boolean);
   }
 
-  if (existsSync(FTCSCOUT_TEAMS_PATH)) {
+  if (hasScout) {
     const cache = await readJson(FTCSCOUT_TEAMS_PATH);
     const teams = Array.isArray(cache?.teams) ? cache.teams : [];
 
@@ -70,6 +85,51 @@ async function readTeamSource() {
   throw new Error(
     "No team cache found. Run npm run sync:ftcscout or npm run sync:ftc first.",
   );
+}
+
+// Use FTCScout as the authoritative team list (already filtered to teams that
+// played in events this season) and overlay official FTC data where available
+// for more accurate locations and additional fields (robot name, logo, etc.).
+function mergeTeamSources(officialTeams, scoutTeams) {
+  const officialByNumber = new Map(
+    officialTeams
+      .map(normalizeOfficialTeam)
+      .filter(Boolean)
+      .map((team) => [team.number, team]),
+  );
+
+  return scoutTeams
+    .map((team) => {
+      const scout = normalizeScoutTeam(team);
+
+      if (!scout) {
+        return null;
+      }
+
+      const official = officialByNumber.get(scout.number);
+
+      if (!official) {
+        return scout;
+      }
+
+      const officialHasLocation = Boolean(
+        official.location?.city || official.location?.state || official.location?.country,
+      );
+
+      return compactObject({
+        ...scout,
+        name: official.name || scout.name,
+        schoolName: official.schoolName || scout.schoolName,
+        rookieYear: official.rookieYear ?? scout.rookieYear,
+        website: official.website ?? scout.website,
+        location: officialHasLocation ? official.location : scout.location,
+        robotName: official.robotName,
+        homeRegion: official.homeRegion,
+        displayLocation: official.displayLocation,
+        logoUrl: official.logoUrl,
+      });
+    })
+    .filter(Boolean);
 }
 
 async function readJson(path) {
@@ -111,6 +171,7 @@ function normalizeScoutTeam(team) {
     rookieYear: team.rookieYear,
     website: team.website,
     updatedAt: normalizeString(team.updatedAt),
+    activeSeasons: Array.isArray(team.activeSeasons) ? team.activeSeasons : undefined,
     location: {
       city: normalizeString(team.location.city) ?? "",
       state: normalizeString(team.location.state) ?? "",
