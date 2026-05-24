@@ -141,6 +141,10 @@ function normalizeOfficialTeam(team) {
     return null;
   }
 
+  if (isUngeocodeableLocation(team.city)) {
+    return null;
+  }
+
   return compactObject({
     number: team.number,
     name: team.name || `Team ${team.number}`,
@@ -159,8 +163,17 @@ function normalizeOfficialTeam(team) {
   });
 }
 
+function isUngeocodeableLocation(city) {
+  const c = (city ?? "").trim().toUpperCase();
+  return c === "APO" || c === "FPO" || c === "DPO";
+}
+
 function normalizeScoutTeam(team) {
   if (!team || typeof team.number !== "number" || !team.location) {
+    return null;
+  }
+
+  if (isUngeocodeableLocation(team.location.city)) {
     return null;
   }
 
