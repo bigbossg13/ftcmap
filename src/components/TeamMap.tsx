@@ -95,6 +95,11 @@ const COUNTRY_CONTINENTS: Record<string, string> = {
 
 const MIN_REGION_CLUSTER_TEAMS = 2;
 
+// Override the centroid position for countries where the team average sits too close to a border.
+const COUNTRY_POSITION_OVERRIDES: Record<string, [number, number]> = {
+  canada: [56, -96],
+};
+
 const STATE_DISPLAY_NAMES: Record<string, Record<string, string>> = {
   mexico: {
     agu: "Aguascalientes", bcn: "Baja California", bcs: "Baja California Sur",
@@ -398,6 +403,7 @@ function buildAggregateClusterGroups(
   const groups = new Map<
     string,
     {
+      key: string;
       label: string;
       teams: PositionedTeam[];
     }
@@ -411,6 +417,7 @@ function buildAggregateClusterGroups(
     }
 
     const group = groups.get(descriptor.key) ?? {
+      key: descriptor.key,
       label: descriptor.label,
       teams: [],
     };
@@ -421,7 +428,8 @@ function buildAggregateClusterGroups(
 
   return [...groups.values()].map((group): AggregateClusterGroup => {
     const bounds = L.latLngBounds(group.teams.map((team) => team.position));
-    const position = getAveragePosition(group.teams);
+    const position =
+      COUNTRY_POSITION_OVERRIDES[group.key] ?? getAveragePosition(group.teams);
 
     return {
       bounds,
