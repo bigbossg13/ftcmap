@@ -131,6 +131,11 @@ const REGION_ALIASES = {
 };
 const countryDisplayNames = new Intl.DisplayNames(["en"], { type: "region" });
 const countryCodeByName = buildCountryCodeByName(cities);
+const COUNTRY_FALLBACK_COORDINATES = {
+  // Used when a team has no city data at all. Coordinates are the country
+  // capital or a central representative city.
+  RU: { lat: 55.75222, lng: 37.61556 }, // Moscow
+};
 const cityIndex = buildCityIndex(cities);
 const cityCoordinateList = buildCityCoordinateList(cities);
 const countryCodesWithCities = new Set(cityCoordinateList.map((city) => city.country));
@@ -281,6 +286,13 @@ async function readExistingCache() {
 }
 
 function geocodeOffline(location) {
+  if (!location.city) {
+    const countryCode = toCountryCode(location.country);
+    const fallback = countryCode ? COUNTRY_FALLBACK_COORDINATES[countryCode] : null;
+
+    return fallback ? { ...fallback, source: "country-fallback" } : null;
+  }
+
   const candidates = getCandidateCities(location);
 
   if (candidates.length === 0) {
