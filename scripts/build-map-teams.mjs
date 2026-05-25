@@ -109,10 +109,11 @@ async function readTeamSource() {
   );
 }
 
-// Use the official FTC Events API as the authoritative team list — it contains
-// every team registered for the season, including those in countries whose
-// national events aren't tracked by FTCScout. FTCScout data is supplemental:
-// it adds updatedAt and activeSeasons where available.
+// Use official FTC Events API data for team details (names, location, etc.)
+// but gate inclusion on FTCScout confirming the team is active this season —
+// meaning they either played in a tracked event or have activeSeasons for the
+// current year. This filters out the large tail of teams that registered but
+// never competed.
 function mergeTeamSources(officialTeams, scoutTeams) {
   const scoutByNumber = new Map(
     scoutTeams
@@ -131,10 +132,14 @@ function mergeTeamSources(officialTeams, scoutTeams) {
 
       const scout = scoutByNumber.get(official.number);
 
+      if (!scout) {
+        return null;
+      }
+
       return compactObject({
         ...official,
-        updatedAt: scout?.updatedAt,
-        activeSeasons: scout?.activeSeasons,
+        updatedAt: scout.updatedAt,
+        activeSeasons: scout.activeSeasons,
       });
     })
     .filter(Boolean);
