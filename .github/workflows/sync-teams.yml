@@ -36,7 +36,7 @@ jobs:
           FTC_EVENTS_TOKEN: ${{ secrets.FTC_EVENTS_TOKEN }}
         run: |
           if [ -n "$FTC_EVENTS_USERNAME" ] && [ -n "$FTC_EVENTS_TOKEN" ]; then
-            npm run sync:ftc
+            npm run sync:ftc || echo "Warning: FTC Events API sync failed (bad credentials?); continuing with FTCScout data only."
           else
             echo "Skipping: FTC_EVENTS_USERNAME / FTC_EVENTS_TOKEN secrets not configured."
           fi
