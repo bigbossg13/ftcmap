@@ -10,6 +10,7 @@
     "preview": "vite preview",
     "sync:ftcscout": "node scripts/sync-ftcscout-teams.mjs",
     "sync:ftc": "node scripts/sync-ftc-official-teams.mjs",
+    "sync:ftc-avatars": "node scripts/sync-ftc-avatars.mjs",
     "sync:geocodes": "node scripts/geocode-team-locations.mjs",
     "build:map-cache": "node scripts/build-map-teams.mjs"
   },

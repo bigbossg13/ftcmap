@@ -1,11 +1,33 @@
 import { readFile, rename, writeFile } from "node:fs/promises";
-import { existsSync } from "node:fs";
+import { existsSync, readdirSync } from "node:fs";
 import { resolve } from "node:path";
 
 const OFFICIAL_TEAMS_PATH = resolve("public/ftc-official-teams.json");
 const FTCSCOUT_TEAMS_PATH = resolve("public/ftcscout-teams.json");
 const GEOCODES_PATH = resolve("public/team-geocodes.json");
+const AVATARS_DIR = resolve("public/avatars");
 const OUTPUT_PATH = resolve("public/map-teams.json");
+
+// Build a set of team numbers that have a cached avatar PNG.
+const teamsWithAvatars = buildTeamsWithAvatarsSet();
+
+function buildTeamsWithAvatarsSet() {
+  if (!existsSync(AVATARS_DIR)) {
+    return new Set();
+  }
+
+  const set = new Set();
+
+  for (const file of readdirSync(AVATARS_DIR)) {
+    const match = file.match(/^(\d+)\.png$/);
+
+    if (match) {
+      set.add(Number(match[1]));
+    }
+  }
+
+  return set;
+}
 
 const season = Number(process.env.FTC_EVENTS_SEASON ?? getCurrentFtcSeason());
 const sourceTeams = await readTeamSource();
@@ -140,7 +162,9 @@ function normalizeOfficialTeam(team) {
     robotName: normalizeString(team.robotName),
     homeRegion: normalizeString(team.homeRegion),
     displayLocation: normalizeString(team.displayLocation),
-    logoUrl: normalizeString(team.logoUrl),
+    logoUrl:
+      normalizeString(team.logoUrl) ||
+      (teamsWithAvatars.has(team.number) ? `/avatars/${team.number}.png` : undefined),
     location: {
       city: normalizeString(team.city) ?? "",
       state: normalizeString(team.state) ?? "",
