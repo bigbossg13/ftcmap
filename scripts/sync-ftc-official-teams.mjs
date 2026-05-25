@@ -19,10 +19,17 @@ const authorization = `Basic ${Buffer.from(`${username}:${token}`).toString(
   "base64",
 )}`;
 
-const teams = await fetchAllTeams();
+const [allTeams, playedTeamNumbers] = await Promise.all([
+  fetchAllTeams(),
+  fetchPlayedTeamNumbers(),
+]);
+
+const teams = allTeams.filter((team) => playedTeamNumbers.has(team.number));
+
 const cache = {
   generatedAt: new Date().toISOString(),
   season,
+  filter: `played-${season}-teams`,
   teamCount: teams.length,
   teams,
 };
@@ -32,7 +39,7 @@ await writeFile(`${OUTPUT_PATH}.tmp`, `${JSON.stringify(cache, null, 2)}\n`);
 await rename(`${OUTPUT_PATH}.tmp`, OUTPUT_PATH);
 
 console.log(
-  `Wrote ${teams.length.toLocaleString()} official FTC teams for ${season} to ${OUTPUT_PATH}`,
+  `Wrote ${teams.length.toLocaleString()} played FTC teams for ${season} (filtered from ${allTeams.length.toLocaleString()} registered) to ${OUTPUT_PATH}`,
 );
 
 async function fetchAllTeams() {
@@ -59,8 +66,104 @@ async function fetchAllTeams() {
   return [...teamsByNumber.values()].sort((a, b) => a.number - b.number);
 }
 
+async function fetchPlayedTeamNumbers() {
+  const events = await fetchAllEvents();
+  const teamNumbers = new Set();
+  let eventErrors = 0;
+
+  console.log(`Fetching team lists for ${events.length.toLocaleString()} events…`);
+
+  await mapWithConcurrency(events, 15, async (event) => {
+    try {
+      const teams = await fetchEventTeams(event.eventCode);
+
+      teams.forEach((team) => {
+        if (typeof team.teamNumber === "number") {
+          teamNumbers.add(team.teamNumber);
+        }
+      });
+    } catch (error) {
+      eventErrors += 1;
+
+      if (eventErrors <= 5) {
+        console.warn(`Event ${event.eventCode}: ${error.message}`);
+      } else if (eventErrors === 6) {
+        console.warn("(Further per-event errors suppressed)");
+      }
+    }
+  });
+
+  console.log(
+    `Found ${teamNumbers.size.toLocaleString()} unique teams across ${events.length.toLocaleString()} events (${eventErrors} event errors)`,
+  );
+
+  return teamNumbers;
+}
+
+async function fetchAllEvents() {
+  const events = [];
+  let page = 1;
+  let pageTotal = 1;
+
+  do {
+    const payload = await fetchEventPage(page);
+    const pageEvents = Array.isArray(payload.events) ? payload.events : [];
+
+    events.push(...pageEvents);
+    pageTotal = Number(payload.pageTotal || pageTotal);
+    page += 1;
+  } while (page <= pageTotal);
+
+  return events;
+}
+
+async function fetchEventTeams(eventCode) {
+  const url = `${API_BASE_URL}/${season}/events/${encodeURIComponent(eventCode)}/teams`;
+  const response = await fetch(url, {
+    headers: {
+      Authorization: authorization,
+      Accept: "application/json",
+    },
+  });
+
+  if (response.status === 404) {
+    return [];
+  }
+
+  if (!response.ok) {
+    throw new Error(`HTTP ${response.status}`);
+  }
+
+  const data = await response.json();
+
+  return Array.isArray(data.teams) ? data.teams : [];
+}
+
 async function fetchTeamPage(page) {
   const url = `${API_BASE_URL}/${season}/teams?page=${page}`;
+  const response = await fetch(url, {
+    headers: {
+      Authorization: authorization,
+      Accept: "application/json",
+    },
+  });
+
+  if (response.status === 401) {
+    throw new Error(
+      `FTC Events API credentials rejected (401) for ${url}. ` +
+        "Check that FTC_EVENTS_USERNAME and FTC_EVENTS_TOKEN are correct (see ftc-api.firstinspires.org).",
+    );
+  }
+
+  if (!response.ok) {
+    throw new Error(`FTC Events API returned ${response.status} for ${url}`);
+  }
+
+  return response.json();
+}
+
+async function fetchEventPage(page) {
+  const url = `${API_BASE_URL}/${season}/events?page=${page}`;
   const response = await fetch(url, {
     headers: {
       Authorization: authorization,
@@ -111,6 +214,22 @@ function normalizeTeam(team) {
       normalizeString(team.avatarUrl) ||
       normalizeString(team.avatar),
   });
+}
+
+async function mapWithConcurrency(items, concurrency, mapper) {
+  let nextIndex = 0;
+
+  async function worker() {
+    while (nextIndex < items.length) {
+      const index = nextIndex;
+      nextIndex += 1;
+      await mapper(items[index], index);
+    }
+  }
+
+  await Promise.all(
+    Array.from({ length: Math.min(concurrency, items.length) }, () => worker()),
+  );
 }
 
 function compactObject(value) {
