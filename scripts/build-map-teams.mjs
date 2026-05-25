@@ -87,46 +87,32 @@ async function readTeamSource() {
   );
 }
 
-// Use FTCScout as the authoritative team list (already filtered to teams that
-// played in events this season) and overlay official FTC data where available
-// for more accurate locations and additional fields (robot name, logo, etc.).
+// Use the official FTC Events API as the authoritative team list — it contains
+// every team registered for the season, including those in countries whose
+// national events aren't tracked by FTCScout. FTCScout data is supplemental:
+// it adds updatedAt and activeSeasons where available.
 function mergeTeamSources(officialTeams, scoutTeams) {
-  const officialByNumber = new Map(
-    officialTeams
-      .map(normalizeOfficialTeam)
+  const scoutByNumber = new Map(
+    scoutTeams
+      .map(normalizeScoutTeam)
       .filter(Boolean)
       .map((team) => [team.number, team]),
   );
 
-  return scoutTeams
+  return officialTeams
     .map((team) => {
-      const scout = normalizeScoutTeam(team);
+      const official = normalizeOfficialTeam(team);
 
-      if (!scout) {
+      if (!official) {
         return null;
       }
 
-      const official = officialByNumber.get(scout.number);
-
-      if (!official) {
-        return scout;
-      }
-
-      const officialHasLocation = Boolean(
-        official.location?.city || official.location?.state || official.location?.country,
-      );
+      const scout = scoutByNumber.get(official.number);
 
       return compactObject({
-        ...scout,
-        name: official.name || scout.name,
-        schoolName: official.schoolName || scout.schoolName,
-        rookieYear: official.rookieYear ?? scout.rookieYear,
-        website: official.website ?? scout.website,
-        location: officialHasLocation ? official.location : scout.location,
-        robotName: official.robotName,
-        homeRegion: official.homeRegion,
-        displayLocation: official.displayLocation,
-        logoUrl: official.logoUrl,
+        ...official,
+        updatedAt: scout?.updatedAt,
+        activeSeasons: scout?.activeSeasons,
       });
     })
     .filter(Boolean);
