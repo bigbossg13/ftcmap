@@ -302,6 +302,79 @@ body {
   font-size: 0.85rem;
 }
 
+.team-hover-tooltip.leaflet-tooltip {
+  border: 1px solid rgb(34 211 238 / 0.35);
+  border-radius: 0.75rem;
+  background: rgb(15 23 42 / 0.98);
+  box-shadow:
+    0 8px 32px rgb(0 0 0 / 0.5),
+    0 0 24px rgb(34 211 238 / 0.14);
+  padding: 0;
+  color: #e2e8f0;
+}
+
+.team-hover-tooltip.leaflet-tooltip-top::before {
+  border-top-color: rgb(34 211 238 / 0.35) !important;
+}
+
+.team-tooltip-inner {
+  display: flex;
+  align-items: center;
+  gap: 0.55rem;
+  padding: 0.5rem 0.65rem;
+}
+
+.team-tooltip-logo {
+  flex-shrink: 0;
+  width: 2.2rem;
+  height: 2.2rem;
+  border: 1px solid rgb(34 211 238 / 0.2);
+  border-radius: 0.5rem;
+  background: rgb(8 13 26);
+  object-fit: contain;
+}
+
+.team-tooltip-initials {
+  display: flex;
+  flex-shrink: 0;
+  align-items: center;
+  justify-content: center;
+  width: 2.2rem;
+  height: 2.2rem;
+  border: 1px solid rgb(34 211 238 / 0.2);
+  border-radius: 0.5rem;
+  background: rgb(8 47 73 / 0.8);
+  color: #67e8f9;
+  font-size: 0.62rem;
+  font-weight: 900;
+  letter-spacing: 0.05em;
+}
+
+.team-tooltip-text {
+  display: flex;
+  flex-direction: column;
+  gap: 0.15rem;
+  min-width: 0;
+}
+
+.team-tooltip-number {
+  color: #67e8f9;
+  font-size: 0.62rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.team-tooltip-name {
+  overflow: hidden;
+  max-width: 11rem;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  color: #ffffff;
+  font-size: 0.82rem;
+  font-weight: 700;
+}
+
 .team-popup-link {
   display: inline-flex;
   align-items: center;

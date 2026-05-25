@@ -43,6 +43,17 @@ jobs:
             echo "Skipping: FTC_EVENTS_USERNAME / FTC_EVENTS_TOKEN secrets not configured."
           fi
 
+      - name: Sync team avatars
+        env:
+          FTC_EVENTS_USERNAME: ${{ secrets.FTC_EVENTS_USERNAME }}
+          FTC_EVENTS_TOKEN: ${{ secrets.FTC_EVENTS_TOKEN }}
+        run: |
+          if [ -n "$FTC_EVENTS_USERNAME" ] && [ -n "$FTC_EVENTS_TOKEN" ] && [ -f public/ftc-official-teams.json ]; then
+            npm run sync:ftc-avatars || echo "Warning: Avatar sync failed; continuing without avatars."
+          else
+            echo "Skipping: credentials not configured or official teams cache missing."
+          fi
+
       - name: Sync FTCScout teams
         run: npm run sync:ftcscout
         env:
@@ -62,7 +73,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add public/ftc-official-teams.json public/ftcscout-teams.json public/team-geocodes.json public/map-teams.json
+          git add public/ftc-official-teams.json public/ftcscout-teams.json public/team-geocodes.json public/map-teams.json public/avatars/
           if git diff --staged --quiet; then
             echo "No changes to commit."
           else

@@ -378,6 +378,13 @@ function createTeamMarker(team: PositionedTeam) {
     minWidth: 250,
   });
 
+  marker.bindTooltip(() => renderTeamTooltip(team), {
+    className: "team-hover-tooltip",
+    direction: "top",
+    offset: [0, -30],
+    opacity: 1,
+  });
+
   return marker;
 }
 
@@ -763,6 +770,14 @@ function normalizeClusterKey(value: string) {
     .replace(/[^\p{L}\p{N}\s]/gu, " ")
     .replace(/\s+/g, " ")
     .trim();
+}
+
+function renderTeamTooltip(team: PositionedTeam) {
+  const logoHtml = team.logoUrl
+    ? `<img class="team-tooltip-logo" src="${escapeHtml(team.logoUrl)}" alt="" loading="lazy" />`
+    : `<div class="team-tooltip-initials">${getInitials(team.name)}</div>`;
+
+  return `<div class="team-tooltip-inner">${logoHtml}<div class="team-tooltip-text"><span class="team-tooltip-number">FTC ${team.number}</span><span class="team-tooltip-name">${escapeHtml(team.name)}</span></div></div>`;
 }
 
 function renderTeamPopup(team: PositionedTeam) {
