@@ -95,6 +95,11 @@ const COUNTRY_CONTINENTS: Record<string, string> = {
 
 const MIN_REGION_CLUSTER_TEAMS = 2;
 
+// Override the centroid position for countries where the team average sits too close to a border.
+const COUNTRY_POSITION_OVERRIDES: Record<string, [number, number]> = {
+  canada: [56, -96],
+};
+
 const STATE_DISPLAY_NAMES: Record<string, Record<string, string>> = {
   mexico: {
     agu: "Aguascalientes", bcn: "Baja California", bcs: "Baja California Sur",
@@ -202,8 +207,63 @@ function TeamMarkerLayer({ teams }: TeamMapProps) {
       cityLayer.addLayer(createTeamMarker(team));
     });
 
+    // Countries that have at least one aggregated region group.
+    const countriesWithRegions = new Set(
+      regionClusterPlan.groups.flatMap((group) =>
+        group.teams.map((team) =>
+          normalizeClusterKey(normalizeClusterPart(team.location.country)),
+        ),
+      ),
+    );
+
+    // Passthrough teams whose country has no region aggregates at all would be
+    // silently absorbed into neighboring geographic clusters (e.g. Lithuania
+    // merging into a Belarus/Romania cluster). Keep them visible by collecting
+    // them into country-level aggregate markers on the region layer instead.
+    const countryOnlyGroups = new Map<
+      string,
+      { label: string; teams: PositionedTeam[] }
+    >();
+
     regionClusterPlan.passthroughTeams.forEach((team) => {
-      regionPassthroughLayer.addLayer(createTeamMarker(team));
+      const countryKey = normalizeClusterKey(
+        normalizeClusterPart(team.location.country),
+      );
+
+      if (countriesWithRegions.has(countryKey)) {
+        regionPassthroughLayer.addLayer(createTeamMarker(team));
+      } else {
+        const group = countryOnlyGroups.get(countryKey) ?? {
+          label: team.location.country || countryKey,
+          teams: [],
+        };
+        group.teams.push(team);
+        countryOnlyGroups.set(countryKey, group);
+      }
+    });
+
+    countryOnlyGroups.forEach((group, countryKey) => {
+      const bounds = L.latLngBounds(group.teams.map((team) => team.position));
+      const position =
+        COUNTRY_POSITION_OVERRIDES[countryKey] ?? getAveragePosition(group.teams);
+      const aggregateGroup: AggregateClusterGroup = {
+        bounds,
+        count: group.teams.length,
+        label: group.label,
+        position,
+        teams: group.teams,
+      };
+      const marker = L.marker(position, {
+        icon: createAggregateClusterIcon(aggregateGroup, "country"),
+        title: `${group.label}: ${group.teams.length.toLocaleString()} teams`,
+        zIndexOffset: 400,
+      });
+
+      marker.on("click", () => {
+        map.fitBounds(bounds.pad(0.12), { animate: true, maxZoom: 8 });
+      });
+
+      regionLayer.addLayer(marker);
     });
 
     buildAggregateClusterGroups(teams, "country").forEach((group) => {
@@ -398,6 +458,7 @@ function buildAggregateClusterGroups(
   const groups = new Map<
     string,
     {
+      key: string;
       label: string;
       teams: PositionedTeam[];
     }
@@ -411,6 +472,7 @@ function buildAggregateClusterGroups(
     }
 
     const group = groups.get(descriptor.key) ?? {
+      key: descriptor.key,
       label: descriptor.label,
       teams: [],
     };
@@ -421,7 +483,8 @@ function buildAggregateClusterGroups(
 
   return [...groups.values()].map((group): AggregateClusterGroup => {
     const bounds = L.latLngBounds(group.teams.map((team) => team.position));
-    const position = getAveragePosition(group.teams);
+    const position =
+      COUNTRY_POSITION_OVERRIDES[group.key] ?? getAveragePosition(group.teams);
 
     return {
       bounds,
