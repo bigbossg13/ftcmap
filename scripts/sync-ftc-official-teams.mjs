@@ -68,6 +68,13 @@ async function fetchTeamPage(page) {
     },
   });
 
+  if (response.status === 401) {
+    throw new Error(
+      `FTC Events API credentials rejected (401) for ${url}. ` +
+        "Check that FTC_EVENTS_USERNAME and FTC_EVENTS_TOKEN are correct.",
+    );
+  }
+
   if (!response.ok) {
     throw new Error(`FTC Events API returned ${response.status} for ${url}`);
   }
