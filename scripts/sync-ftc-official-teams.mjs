@@ -149,7 +149,7 @@ async function fetchEventTeams(eventCode) {
   }
 
   if (!response.ok) {
-    throw new Error(`HTTP ${response.status}`);
+    throw new Error(describeFtcApiError(response.status, url));
   }
 
   const data = await response.json();
@@ -160,21 +160,11 @@ async function fetchEventTeams(eventCode) {
 async function fetchTeamPage(page) {
   const url = `${API_BASE_URL}/${season}/teams?page=${page}`;
   const response = await fetch(url, {
-    headers: {
-      Authorization: authorization,
-      Accept: "application/json",
-    },
+    headers: { Authorization: authorization, Accept: "application/json" },
   });
 
-  if (response.status === 401) {
-    throw new Error(
-      `FTC Events API credentials rejected (401) for ${url}. ` +
-        "Check that FTC_EVENTS_USERNAME and FTC_EVENTS_TOKEN are correct (see ftc-api.firstinspires.org).",
-    );
-  }
-
   if (!response.ok) {
-    throw new Error(`FTC Events API returned ${response.status} for ${url}`);
+    throw new Error(describeFtcApiError(response.status, url));
   }
 
   return response.json();
@@ -183,24 +173,45 @@ async function fetchTeamPage(page) {
 async function fetchEventPage(page) {
   const url = `${API_BASE_URL}/${season}/events?page=${page}`;
   const response = await fetch(url, {
-    headers: {
-      Authorization: authorization,
-      Accept: "application/json",
-    },
+    headers: { Authorization: authorization, Accept: "application/json" },
   });
 
-  if (response.status === 401) {
-    throw new Error(
-      `FTC Events API credentials rejected (401) for ${url}. ` +
-        "Check that FTC_EVENTS_USERNAME and FTC_EVENTS_TOKEN are correct (see ftc-api.firstinspires.org).",
-    );
-  }
-
   if (!response.ok) {
-    throw new Error(`FTC Events API returned ${response.status} for ${url}`);
+    throw new Error(describeFtcApiError(response.status, url));
   }
 
   return response.json();
+}
+
+function describeFtcApiError(status, url) {
+  const base = `FTC Events API ${status}`;
+  switch (status) {
+    case 400:
+      return `${base} Bad Request — malformed URL or invalid parameter: ${url}`;
+    case 401:
+      return (
+        `${base} Unauthorized — credentials rejected. ` +
+        "Verify FTC_EVENTS_USERNAME and FTC_EVENTS_TOKEN match your account at ftc-api.firstinspires.org."
+      );
+    case 403:
+      return (
+        `${base} Forbidden — account may not have API access, ` +
+        "or this IP/user-agent is blocked. Check your API registration at ftc-api.firstinspires.org."
+      );
+    case 404:
+      return `${base} Not Found — season or resource does not exist: ${url}`;
+    case 429:
+      return (
+        `${base} Too Many Requests — rate limit exceeded. ` +
+        "Reduce request concurrency or add delays between calls."
+      );
+    case 500:
+      return `${base} Internal Server Error — the FIRST API is having trouble; try again later.`;
+    case 503:
+      return `${base} Service Unavailable — the FIRST API is down or under maintenance; try again later.`;
+    default:
+      return `${base} error for ${url}`;
+  }
 }
 
 function normalizeTeam(team) {
