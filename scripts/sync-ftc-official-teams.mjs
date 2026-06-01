@@ -84,9 +84,25 @@ async function fetchPlayedTeamNumbers() {
     `Fetching team lists for ${competitiveEvents.length.toLocaleString()} competitive events (${allEvents.length.toLocaleString()} total)…`,
   );
 
+  // Warn once if the first event has neither expected code field so we catch
+  // API field-name drift early rather than silently fetching 0 teams.
+  const firstEvent = competitiveEvents[0];
+  if (firstEvent && !firstEvent.code && !firstEvent.eventCode) {
+    console.warn(
+      `Warning: first event object has no 'code' or 'eventCode' field. ` +
+        `Available keys: ${Object.keys(firstEvent).join(", ")}`,
+    );
+  }
+
   await mapWithConcurrency(competitiveEvents, 15, async (event) => {
+    const code = event.code ?? event.eventCode;
+
+    if (!code) {
+      return;
+    }
+
     try {
-      const teams = await fetchEventTeams(event.eventCode);
+      const teams = await fetchEventTeams(code);
 
       teams.forEach((team) => {
         if (typeof team.teamNumber === "number") {
@@ -97,7 +113,7 @@ async function fetchPlayedTeamNumbers() {
       eventErrors += 1;
 
       if (eventErrors <= 5) {
-        console.warn(`Event ${event.eventCode}: ${error.message}`);
+        console.warn(`Event ${code}: ${error.message}`);
       } else if (eventErrors === 6) {
         console.warn("(Further per-event errors suppressed)");
       }
