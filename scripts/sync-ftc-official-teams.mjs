@@ -106,34 +106,19 @@ async function fetchPlayedTeamNumbers() {
   return teamNumbers;
 }
 
-// Event types that represent actual competitive matches. The FTC Events API
-// uses integer codes; 0=None, 1=Kickoff, 2=Scrimmage, 3=Qualifier,
+// Only Kickoff events are excluded — they have no competitive matches and
+// teams are on the roster simply by virtue of being registered with FIRST.
+// Scrimmages, qualifiers, league meets, championships, and all other event
+// types count. Unknown/future type codes are included conservatively.
+// FTC Events API integer codes: 0=None, 1=Kickoff, 2=Scrimmage, 3=Qualifier,
 // 4=LeagueMeet, 5=LeagueTournament, 6=RegionalChampionship, 7=Championship,
 // 8=FIRSTChampionship, 9=Offseason, 99=Other.
-// typeName mirrors the integer as a string label.
-const COMPETITIVE_EVENT_TYPES = new Set([
-  // Numeric codes
-  3, 4, 5, 6, 7, 8, 9,
-  // String labels used by some API responses
-  "Qualifier",
-  "LeagueMeet",
-  "LeagueTournament",
-  "RegionalChampionship",
-  "Championship",
-  "FIRSTChampionship",
-  "Offseason",
-]);
+const EXCLUDED_EVENT_TYPES = new Set([1, "Kickoff"]);
 
 function isCompetitiveEvent(event) {
-  // If the API doesn't provide a type, include the event to avoid accidentally
-  // excluding legitimate competitions with unknown/future type codes.
-  if (event.type == null && !event.typeName) {
-    return true;
-  }
-
   return (
-    COMPETITIVE_EVENT_TYPES.has(event.type) ||
-    COMPETITIVE_EVENT_TYPES.has(event.typeName)
+    !EXCLUDED_EVENT_TYPES.has(event.type) &&
+    !EXCLUDED_EVENT_TYPES.has(event.typeName)
   );
 }
 
