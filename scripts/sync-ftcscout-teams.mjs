@@ -78,24 +78,31 @@ const GRAPHQL_REGIONS = [
 ];
 
 const season = Number(process.env.FTC_EVENTS_SEASON ?? getCurrentFtcSeason());
-const playedTeamNumbers = await fetchPlayedTeamNumbers(season);
-const teamsByNumber = new Map(
-  (await fetchRestTeams()).map((team) => [team.number, team]),
-);
 
-await fillMissingTeamDetails(playedTeamNumbers, teamsByNumber);
+// Fetch REST teams and all-region GraphQL team details in parallel.
+// REST has updatedAt; GraphQL teamsSearch has activeSeasons and catches
+// teams missing from the REST index. Both return location data.
+const [restTeams, graphqlTeams] = await Promise.all([
+  fetchRestTeams(),
+  fetchAllRegionTeams(),
+]);
 
-// Include teams that played in a tracked event OR that FTCScout itself
-// marks as active in this season via activeSeasons. The latter catches
-// teams whose national/league events aren't in FTCScout's event index
-// (e.g. Lithuania, Ukraine) but that FTCScout still records season info for.
+// Merge: REST takes priority (richer data), GraphQL fills any gaps.
+const teamsByNumber = new Map(restTeams.map((t) => [t.number, t]));
+for (const team of graphqlTeams) {
+  if (!teamsByNumber.has(team.number)) {
+    teamsByNumber.set(team.number, team);
+  }
+}
+
+// Keep teams that FTCScout marks as active in this season.
 const cacheTeams = [...teamsByNumber.values()]
   .filter(
     (team) =>
-      playedTeamNumbers.has(team.number) ||
-      (Array.isArray(team.activeSeasons) && team.activeSeasons.includes(season)),
+      Array.isArray(team.activeSeasons) && team.activeSeasons.includes(season),
   )
   .sort((a, b) => a.number - b.number);
+
 const cache = {
   generatedAt: new Date().toISOString(),
   season,
@@ -114,58 +121,17 @@ console.log(
 
 async function fetchRestTeams() {
   const response = await fetch(FTC_SCOUT_REST_TEAMS_URL, {
-    headers: {
-      "User-Agent": USER_AGENT,
-    },
+    headers: { "User-Agent": USER_AGENT },
   });
 
   if (!response.ok) {
     throw new Error(`FTCScout REST returned ${response.status}`);
   }
 
-  return normalizeTeams(await response.json());
+  return normalizeRestTeams(await response.json());
 }
 
-async function fetchPlayedTeamNumbers(season) {
-  const eventQuery = `
-    query PlayedTeams($region: RegionOption!, $season: Int!, $limit: Int) {
-      eventsSearch(season: $season, region: $region, limit: $limit) {
-        teams {
-          teamNumber
-        }
-      }
-    }
-  `;
-  const playedTeamNumbers = new Set();
-  const results = await mapWithConcurrency(GRAPHQL_REGIONS, 10, async (region) => {
-    const payload = await fetchGraphQl(eventQuery, {
-      region,
-      season,
-      limit: 10000,
-    });
-
-    return payload.eventsSearch ?? [];
-  });
-
-  results.flat().forEach((event) => {
-    (event.teams ?? []).forEach((team) => {
-      if (typeof team.teamNumber === "number") {
-        playedTeamNumbers.add(team.teamNumber);
-      }
-    });
-  });
-
-  return playedTeamNumbers;
-}
-
-async function fillMissingTeamDetails(playedTeamNumbers, teamsByNumber) {
-  const missingBeforeFetch = () =>
-    [...playedTeamNumbers].filter((teamNumber) => !teamsByNumber.has(teamNumber));
-
-  if (missingBeforeFetch().length === 0) {
-    return;
-  }
-
+async function fetchAllRegionTeams() {
   const teamQuery = `
     query RegionTeams($region: RegionOption!, $limit: Int) {
       teamsSearch(region: $region, limit: $limit) {
@@ -184,22 +150,13 @@ async function fillMissingTeamDetails(playedTeamNumbers, teamsByNumber) {
     }
   `;
 
-  await mapWithConcurrency(GRAPHQL_REGIONS, 8, async (region) => {
-    if (missingBeforeFetch().length === 0) {
-      return;
-    }
+  const results = await mapWithConcurrency(GRAPHQL_REGIONS, 25, (region) =>
+    fetchGraphQl(teamQuery, { region, limit: 30000 }).then(
+      (payload) => payload.teamsSearch ?? [],
+    ),
+  );
 
-    const payload = await fetchGraphQl(teamQuery, {
-      region,
-      limit: 30000,
-    });
-
-    (payload.teamsSearch ?? []).forEach((team) => {
-      if (playedTeamNumbers.has(team.number) && !teamsByNumber.has(team.number)) {
-        teamsByNumber.set(team.number, normalizeGraphQlTeam(team));
-      }
-    });
-  });
+  return results.flat().map(normalizeGraphQlTeam).filter(Boolean);
 }
 
 async function fetchGraphQl(query, variables) {
@@ -209,10 +166,7 @@ async function fetchGraphQl(query, variables) {
       "Content-Type": "application/json",
       "User-Agent": USER_AGENT,
     },
-    body: JSON.stringify({
-      query,
-      variables,
-    }),
+    body: JSON.stringify({ query, variables }),
   });
 
   if (!response.ok) {
@@ -222,7 +176,7 @@ async function fetchGraphQl(query, variables) {
   const payload = await response.json();
 
   if (payload.errors?.length) {
-    throw new Error(payload.errors.map((error) => error.message).join("; "));
+    throw new Error(payload.errors.map((e) => e.message).join("; "));
   }
 
   return payload.data;
@@ -234,8 +188,7 @@ async function mapWithConcurrency(items, concurrency, mapper) {
 
   async function worker() {
     while (nextIndex < items.length) {
-      const index = nextIndex;
-      nextIndex += 1;
+      const index = nextIndex++;
       results[index] = await mapper(items[index], index);
     }
   }
@@ -247,12 +200,14 @@ async function mapWithConcurrency(items, concurrency, mapper) {
   return results;
 }
 
-function normalizeTeams(teams) {
+function normalizeRestTeams(teams) {
   return teams
     .map((team) => {
-      const location = normalizeLocation(team);
+      const city = normalizeString(team.city);
+      const state = normalizeString(team.state);
+      const country = normalizeString(team.country);
 
-      if (typeof team.number !== "number" || !team.name || !location) {
+      if (typeof team.number !== "number" || !team.name) {
         return null;
       }
 
@@ -264,15 +219,21 @@ function normalizeTeams(teams) {
         website: typeof team.website === "string" ? team.website : undefined,
         activeSeasons: Array.isArray(team.activeSeasons) ? team.activeSeasons : undefined,
         updatedAt: normalizeString(team.updatedAt),
-        location,
+        location:
+          city || state || country
+            ? { city: city ?? "", state: state ?? "", country: country ?? "" }
+            : undefined,
       });
     })
-    .filter(Boolean)
-    .sort((a, b) => a.number - b.number);
+    .filter(Boolean);
 }
 
 function normalizeGraphQlTeam(team) {
-  const location = team.location ?? {};
+  if (typeof team.number !== "number" || !team.name) {
+    return null;
+  }
+
+  const loc = team.location ?? {};
 
   return compactObject({
     number: team.number,
@@ -282,32 +243,16 @@ function normalizeGraphQlTeam(team) {
     website: typeof team.website === "string" ? team.website : undefined,
     activeSeasons: Array.isArray(team.activeSeasons) ? team.activeSeasons : undefined,
     location: {
-      city: normalizeString(location.city) ?? "",
-      state: normalizeString(location.state) ?? "",
-      country: normalizeString(location.country) ?? "",
+      city: normalizeString(loc.city) ?? "",
+      state: normalizeString(loc.state) ?? "",
+      country: normalizeString(loc.country) ?? "",
     },
   });
 }
 
-function normalizeLocation(team) {
-  const city = normalizeString(team.city);
-  const state = normalizeString(team.state);
-  const country = normalizeString(team.country);
-
-  if (!city && !state && !country) {
-    return null;
-  }
-
-  return {
-    city: city ?? "",
-    state: state ?? "",
-    country: country ?? "",
-  };
-}
-
 function compactObject(value) {
   return Object.fromEntries(
-    Object.entries(value).filter(([, entry]) => entry !== undefined && entry !== ""),
+    Object.entries(value).filter(([, v]) => v !== undefined && v !== ""),
   );
 }
 
