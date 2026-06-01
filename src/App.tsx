@@ -245,6 +245,19 @@ export default function App() {
             </div>
           </div>
         </section>
+
+        <footer className="relative z-10 py-3 text-center text-xs text-slate-500">
+          Team data sourced in part from the{" "}
+          <a
+            href="https://frc-events.firstinspires.org/services/API"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="text-slate-400 underline underline-offset-2 hover:text-cyan-300 transition-colors"
+          >
+            FIRST Events API
+          </a>
+          .
+        </footer>
       </section>
     </main>
   );
