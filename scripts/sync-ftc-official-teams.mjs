@@ -19,10 +19,11 @@ const authorization = `Basic ${Buffer.from(`${username}:${token}`).toString(
   "base64",
 )}`;
 
-// FTC Events API integer codes: 0=None, 1=Kickoff, 2=Scrimmage, 3=Qualifier,
+// FTC Events API type codes: 0=None, 1=Kickoff, 2=Scrimmage, 3=Qualifier,
 // 4=LeagueMeet, 5=LeagueTournament, 6=RegionalChampionship, 7=Championship,
 // 8=FIRSTChampionship, 9=Offseason, 99=Other.
-const EXCLUDED_EVENT_TYPES = new Set([1, "Kickoff"]);
+// The API returns type as a string (e.g. "1"), so include both forms.
+const EXCLUDED_EVENT_TYPES = new Set([1, "1", "Kickoff"]);
 
 const [allTeams, playedTeamNumbers] = await Promise.all([
   fetchAllTeams(),
@@ -84,13 +85,6 @@ async function fetchPlayedTeamNumbers() {
     `Fetching team lists for ${competitiveEvents.length.toLocaleString()} competitive events (${allEvents.length.toLocaleString()} total)…`,
   );
 
-  // Always log the first event's keys so we can confirm the correct field name.
-  const firstEvent = competitiveEvents[0];
-  if (firstEvent) {
-    console.log(`First event keys: ${Object.keys(firstEvent).join(", ")}`);
-    console.log(`First event sample: ${JSON.stringify(firstEvent)}`);
-  }
-
   await mapWithConcurrency(competitiveEvents, 15, async (event) => {
     const code = event.code ?? event.eventCode;
 
@@ -138,22 +132,15 @@ async function fetchAllEvents() {
 
   do {
     const payload = await fetchEventPage(page);
-
-    // Log raw payload structure on first page so we can confirm field names.
-    if (page === 1) {
-      console.log(`Events payload top-level keys: ${Object.keys(payload).join(", ")}`);
-      const rawEvents = payload.events ?? payload.Events ?? payload;
-      const firstRaw = Array.isArray(rawEvents) ? rawEvents[0] : rawEvents;
-      if (firstRaw && typeof firstRaw === "object") {
-        console.log(`First raw event keys: ${Object.keys(firstRaw).join(", ")}`);
-        console.log(`First raw event: ${JSON.stringify(firstRaw)}`);
-      }
-    }
-
     const pageEvents = Array.isArray(payload.events) ? payload.events : [];
 
     events.push(...pageEvents);
-    pageTotal = Number(payload.pageTotal || pageTotal);
+    // API returns eventCount (total records), not pageTotal. Derive page
+    // count from eventCount + page size so pagination works if the API ever
+    // adds it; for now the response is single-page so this stays at 1.
+    const pageSize = pageEvents.length;
+    const eventCount = Number(payload.eventCount ?? 0);
+    pageTotal = pageSize > 0 ? Math.ceil(eventCount / pageSize) : 1;
     page += 1;
   } while (page <= pageTotal);
 
