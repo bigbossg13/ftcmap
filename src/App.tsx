@@ -1,7 +1,12 @@
 import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { fetchActiveTeams, type TeamFetchResult } from "./api/ftcScout";
-import TeamMap from "./components/TeamMap";
+import { fetchActiveTeams, getCurrentFtcSeason, type TeamFetchResult } from "./api/ftcScout";
+import {
+  fetchArchivedSeasonCache,
+  fetchSeasonManifest,
+  type SeasonEntry,
+} from "./api/mapTeams";
 import { positionTeams } from "./lib/teamLocations";
+import TeamMap from "./components/TeamMap";
 
 type LoadState =
   | { status: "loading" }
@@ -9,8 +14,23 @@ type LoadState =
   | { status: "error"; message: string };
 
 export default function App() {
+  const currentSeason = getCurrentFtcSeason();
+  const [selectedYear, setSelectedYear] = useState<number>(currentSeason);
+  const [archivedSeasons, setArchivedSeasons] = useState<SeasonEntry[]>([]);
   const [loadState, setLoadState] = useState<LoadState>({ status: "loading" });
 
+  // Load season manifest once on mount.
+  useEffect(() => {
+    fetchSeasonManifest()
+      .then((manifest) => {
+        if (manifest?.seasons.length) {
+          setArchivedSeasons(manifest.seasons);
+        }
+      })
+      .catch(() => {});
+  }, []);
+
+  // Load team data whenever the selected season changes.
   useEffect(() => {
     let ignore = false;
 
@@ -18,7 +38,23 @@ export default function App() {
       setLoadState({ status: "loading" });
 
       try {
-        const result = await fetchActiveTeams();
+        let result: TeamFetchResult;
+
+        if (selectedYear === currentSeason) {
+          result = await fetchActiveTeams();
+        } else {
+          const cache = await fetchArchivedSeasonCache(selectedYear);
+
+          if (!cache) {
+            throw new Error(`No archived data found for season ${selectedYear}.`);
+          }
+
+          result = {
+            teams: cache.teams,
+            season: cache.season,
+            source: "map-cache",
+          };
+        }
 
         if (!ignore) {
           setLoadState({ status: "ready", result });
@@ -41,7 +77,7 @@ export default function App() {
     return () => {
       ignore = true;
     };
-  }, []);
+  }, [selectedYear, currentSeason]);
 
   const positionedTeams = useMemo(
     () =>
@@ -71,7 +107,6 @@ export default function App() {
     };
   }, [positionedTeams]);
 
-  const season = loadState.status === "ready" ? loadState.result.season : null;
   const isRestFallback =
     loadState.status === "ready" && loadState.result.source === "rest-fallback";
   const isOfficialCache =
@@ -79,6 +114,14 @@ export default function App() {
     loadState.result.source === "official-ftc-cache";
   const officialData =
     loadState.status === "ready" ? loadState.result.officialData : undefined;
+
+  // Build the full list of selectable seasons: current + any archived ones.
+  const allSeasons: number[] = [
+    currentSeason,
+    ...archivedSeasons
+      .map((s) => s.year)
+      .filter((y) => y !== currentSeason),
+  ];
 
   return (
     <main className="relative min-h-screen overflow-hidden bg-slate-950 text-slate-100">
@@ -97,11 +140,32 @@ export default function App() {
               Explore active FTC teams on a dark Leaflet map. Click any marker
               for the team name, number, and FTCScout profile.
             </p>
+
+            {allSeasons.length > 1 && (
+              <div className="mt-4 flex flex-wrap items-center gap-2">
+                <span className="text-xs font-bold uppercase tracking-[0.18em] text-slate-400">
+                  Season
+                </span>
+                {allSeasons.map((year) => (
+                  <button
+                    key={year}
+                    onClick={() => setSelectedYear(year)}
+                    className={
+                      year === selectedYear
+                        ? "rounded-full border border-cyan-400/60 bg-cyan-500/20 px-3 py-1 text-xs font-bold text-cyan-200 transition-colors"
+                        : "rounded-full border border-white/10 bg-white/[0.04] px-3 py-1 text-xs font-bold text-slate-400 transition-colors hover:border-white/20 hover:text-slate-200"
+                    }
+                  >
+                    {year}–{String(year + 1).slice(-2)}
+                  </button>
+                ))}
+              </div>
+            )}
           </div>
 
           <div className="grid grid-cols-3 gap-3 lg:min-w-[30rem]">
             <StatCard
-              label={season ? `${season} teams` : "Teams"}
+              label={`${selectedYear} teams`}
               value={
                 loadState.status === "ready"
                   ? positionedTeams.length.toLocaleString()
