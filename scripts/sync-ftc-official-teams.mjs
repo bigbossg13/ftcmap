@@ -19,6 +19,11 @@ const authorization = `Basic ${Buffer.from(`${username}:${token}`).toString(
   "base64",
 )}`;
 
+// FTC Events API integer codes: 0=None, 1=Kickoff, 2=Scrimmage, 3=Qualifier,
+// 4=LeagueMeet, 5=LeagueTournament, 6=RegionalChampionship, 7=Championship,
+// 8=FIRSTChampionship, 9=Offseason, 99=Other.
+const EXCLUDED_EVENT_TYPES = new Set([1, "Kickoff"]);
+
 const [allTeams, playedTeamNumbers] = await Promise.all([
   fetchAllTeams(),
   fetchPlayedTeamNumbers(),
@@ -105,15 +110,6 @@ async function fetchPlayedTeamNumbers() {
 
   return teamNumbers;
 }
-
-// Only Kickoff events are excluded — they have no competitive matches and
-// teams are on the roster simply by virtue of being registered with FIRST.
-// Scrimmages, qualifiers, league meets, championships, and all other event
-// types count. Unknown/future type codes are included conservatively.
-// FTC Events API integer codes: 0=None, 1=Kickoff, 2=Scrimmage, 3=Qualifier,
-// 4=LeagueMeet, 5=LeagueTournament, 6=RegionalChampionship, 7=Championship,
-// 8=FIRSTChampionship, 9=Offseason, 99=Other.
-const EXCLUDED_EVENT_TYPES = new Set([1, "Kickoff"]);
 
 function isCompetitiveEvent(event) {
   return (
