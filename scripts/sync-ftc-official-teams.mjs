@@ -84,14 +84,11 @@ async function fetchPlayedTeamNumbers() {
     `Fetching team lists for ${competitiveEvents.length.toLocaleString()} competitive events (${allEvents.length.toLocaleString()} total)…`,
   );
 
-  // Warn once if the first event has neither expected code field so we catch
-  // API field-name drift early rather than silently fetching 0 teams.
+  // Always log the first event's keys so we can confirm the correct field name.
   const firstEvent = competitiveEvents[0];
-  if (firstEvent && !firstEvent.code && !firstEvent.eventCode) {
-    console.warn(
-      `Warning: first event object has no 'code' or 'eventCode' field. ` +
-        `Available keys: ${Object.keys(firstEvent).join(", ")}`,
-    );
+  if (firstEvent) {
+    console.log(`First event keys: ${Object.keys(firstEvent).join(", ")}`);
+    console.log(`First event sample: ${JSON.stringify(firstEvent)}`);
   }
 
   await mapWithConcurrency(competitiveEvents, 15, async (event) => {
