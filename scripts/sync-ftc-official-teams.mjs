@@ -67,13 +67,19 @@ async function fetchAllTeams() {
 }
 
 async function fetchPlayedTeamNumbers() {
-  const events = await fetchAllEvents();
+  const allEvents = await fetchAllEvents();
+  // Only count teams from events where matches are actually played.
+  // Kickoffs, scrimmages, and demo/workshop events don't have competitive
+  // matches, so teams registered for those events shouldn't count.
+  const competitiveEvents = allEvents.filter(isCompetitiveEvent);
   const teamNumbers = new Set();
   let eventErrors = 0;
 
-  console.log(`Fetching team lists for ${events.length.toLocaleString()} events…`);
+  console.log(
+    `Fetching team lists for ${competitiveEvents.length.toLocaleString()} competitive events (${allEvents.length.toLocaleString()} total)…`,
+  );
 
-  await mapWithConcurrency(events, 15, async (event) => {
+  await mapWithConcurrency(competitiveEvents, 15, async (event) => {
     try {
       const teams = await fetchEventTeams(event.eventCode);
 
@@ -94,10 +100,41 @@ async function fetchPlayedTeamNumbers() {
   });
 
   console.log(
-    `Found ${teamNumbers.size.toLocaleString()} unique teams across ${events.length.toLocaleString()} events (${eventErrors} event errors)`,
+    `Found ${teamNumbers.size.toLocaleString()} unique teams across ${competitiveEvents.length.toLocaleString()} competitive events (${eventErrors} event errors)`,
   );
 
   return teamNumbers;
+}
+
+// Event types that represent actual competitive matches. The FTC Events API
+// uses integer codes; 0=None, 1=Kickoff, 2=Scrimmage, 3=Qualifier,
+// 4=LeagueMeet, 5=LeagueTournament, 6=RegionalChampionship, 7=Championship,
+// 8=FIRSTChampionship, 9=Offseason, 99=Other.
+// typeName mirrors the integer as a string label.
+const COMPETITIVE_EVENT_TYPES = new Set([
+  // Numeric codes
+  3, 4, 5, 6, 7, 8, 9,
+  // String labels used by some API responses
+  "Qualifier",
+  "LeagueMeet",
+  "LeagueTournament",
+  "RegionalChampionship",
+  "Championship",
+  "FIRSTChampionship",
+  "Offseason",
+]);
+
+function isCompetitiveEvent(event) {
+  // If the API doesn't provide a type, include the event to avoid accidentally
+  // excluding legitimate competitions with unknown/future type codes.
+  if (event.type == null && !event.typeName) {
+    return true;
+  }
+
+  return (
+    COMPETITIVE_EVENT_TYPES.has(event.type) ||
+    COMPETITIVE_EVENT_TYPES.has(event.typeName)
+  );
 }
 
 async function fetchAllEvents() {
