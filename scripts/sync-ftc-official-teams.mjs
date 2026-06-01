@@ -148,7 +148,7 @@ async function fetchAllEvents() {
 }
 
 async function fetchEventTeams(eventCode) {
-  const url = `${API_BASE_URL}/${season}/events/${encodeURIComponent(eventCode)}/teams?excludeNonCompeting=true`;
+  const url = `${API_BASE_URL}/${season}/teams?eventCode=${encodeURIComponent(eventCode)}&excludeNonCompeting=true`;
   const response = await fetch(url, {
     headers: {
       Authorization: authorization,
