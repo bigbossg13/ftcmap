@@ -115,34 +115,74 @@ async function readTeamSource() {
   );
 }
 
-// Official FTC Events API data is the primary source (pre-filtered to teams
-// that played in at least one event). FTCScout supplements with updatedAt
-// and activeSeasons where available.
+// Merge strategy:
+// 1. FTCScout is the primary "played this season" list. For each scout team,
+//    overlay official data (better location, robot name, logo) where available.
+// 2. Official teams NOT in FTCScout are included if they have a valid location —
+//    this catches teams in regions whose events FTCScout doesn't index.
 function mergeTeamSources(officialTeams, scoutTeams) {
-  const scoutByNumber = new Map(
-    scoutTeams
-      .map(normalizeScoutTeam)
+  const officialByNumber = new Map(
+    officialTeams
+      .map(normalizeOfficialTeam)
       .filter(Boolean)
       .map((team) => [team.number, team]),
   );
 
-  return officialTeams
-    .map((team) => {
-      const official = normalizeOfficialTeam(team);
+  const merged = new Map();
 
-      if (!official) {
-        return null;
-      }
+  // Pass 1: FTCScout played/active teams, supplemented by official data.
+  for (const raw of scoutTeams) {
+    const scout = normalizeScoutTeam(raw);
 
-      const scout = scoutByNumber.get(official.number);
+    if (!scout) {
+      continue;
+    }
 
-      return compactObject({
-        ...official,
-        updatedAt: scout?.updatedAt,
-        activeSeasons: scout?.activeSeasons,
-      });
-    })
-    .filter(Boolean);
+    const official = officialByNumber.get(scout.number);
+
+    if (!official) {
+      merged.set(scout.number, scout);
+      continue;
+    }
+
+    const officialHasLocation = Boolean(
+      official.location?.city || official.location?.state || official.location?.country,
+    );
+
+    merged.set(
+      scout.number,
+      compactObject({
+        ...scout,
+        name: official.name || scout.name,
+        schoolName: official.schoolName || scout.schoolName,
+        rookieYear: official.rookieYear ?? scout.rookieYear,
+        website: official.website ?? scout.website,
+        location: officialHasLocation ? official.location : scout.location,
+        robotName: official.robotName,
+        homeRegion: official.homeRegion,
+        displayLocation: official.displayLocation,
+        logoUrl: official.logoUrl,
+      }),
+    );
+  }
+
+  // Pass 2: official-only teams (not in FTCScout) that have a location.
+  // These are typically teams in regions whose events FTCScout doesn't index.
+  for (const official of officialByNumber.values()) {
+    if (merged.has(official.number)) {
+      continue;
+    }
+
+    const hasLocation = Boolean(
+      official.location?.city || official.location?.state || official.location?.country,
+    );
+
+    if (hasLocation) {
+      merged.set(official.number, official);
+    }
+  }
+
+  return [...merged.values()].sort((a, b) => a.number - b.number);
 }
 
 async function readJson(path) {
