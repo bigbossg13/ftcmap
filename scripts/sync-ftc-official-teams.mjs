@@ -187,28 +187,32 @@ function describeFtcApiError(status, url) {
   const base = `FTC Events API ${status}`;
   switch (status) {
     case 400:
-      return `${base} Bad Request — malformed URL or invalid parameter: ${url}`;
+      return (
+        `${base} — Invalid season, malformed parameter, missing parameter, or invalid API version. ` +
+        `Check the season year and all parameters in: ${url}`
+      );
     case 401:
       return (
-        `${base} Unauthorized — credentials rejected. ` +
-        "Verify FTC_EVENTS_USERNAME and FTC_EVENTS_TOKEN match your account at ftc-api.firstinspires.org."
-      );
-    case 403:
-      return (
-        `${base} Forbidden — account may not have API access, ` +
-        "or this IP/user-agent is blocked. Check your API registration at ftc-api.firstinspires.org."
+        `${base} Unauthorized — credentials missing or invalid. ` +
+        "Verify FTC_EVENTS_USERNAME and FTC_EVENTS_TOKEN at ftc-api.firstinspires.org."
       );
     case 404:
-      return `${base} Not Found — season or resource does not exist: ${url}`;
-    case 429:
       return (
-        `${base} Too Many Requests — rate limit exceeded. ` +
-        "Reduce request concurrency or add delays between calls."
+        `${base} Invalid Event — the season is valid but no event matches that event code: ${url}. ` +
+        "Event codes can change year to year."
       );
     case 500:
-      return `${base} Internal Server Error — the FIRST API is having trouble; try again later.`;
+      return `${base} Internal Server Error — unexpected server condition; try again later.`;
+    case 501:
+      return (
+        `${base} — Request did not match any API pattern. ` +
+        `The URL or parameter combination is not supported: ${url}`
+      );
     case 503:
-      return `${base} Service Unavailable — the FIRST API is down or under maintenance; try again later.`;
+      return (
+        `${base} Service Unavailable — server is overloaded or under maintenance; ` +
+        "try again later (check Retry-After header if present)."
+      );
     default:
       return `${base} error for ${url}`;
   }
