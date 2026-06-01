@@ -159,7 +159,7 @@ async function fetchAllRegionTeams() {
   return results.flat().map(normalizeGraphQlTeam).filter(Boolean);
 }
 
-async function fetchGraphQl(query, variables) {
+async function fetchGraphQl(query, variables, attempt = 0) {
   const response = await fetch(FTC_SCOUT_GRAPHQL_URL, {
     method: "POST",
     headers: {
@@ -168,6 +168,12 @@ async function fetchGraphQl(query, variables) {
     },
     body: JSON.stringify({ query, variables }),
   });
+
+  if ([429, 502, 503].includes(response.status) && attempt < 4) {
+    const delay = 1000 * 2 ** attempt;
+    await new Promise((r) => setTimeout(r, delay));
+    return fetchGraphQl(query, variables, attempt + 1);
+  }
 
   if (!response.ok) {
     throw new Error(`FTCScout GraphQL returned ${response.status}`);
