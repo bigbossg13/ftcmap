@@ -62,7 +62,7 @@ jobs:
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add public/ftc-official-teams.json public/ftcscout-teams.json public/team-geocodes.json public/map-teams.json
+          git add public/ftc-official-teams.json public/ftcscout-teams.json public/ftcscout-known-numbers.json public/team-geocodes.json public/map-teams.json
           if git diff --staged --quiet; then
             echo "No changes to commit."
           else
