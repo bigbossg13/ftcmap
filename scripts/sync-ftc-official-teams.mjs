@@ -138,6 +138,18 @@ async function fetchAllEvents() {
 
   do {
     const payload = await fetchEventPage(page);
+
+    // Log raw payload structure on first page so we can confirm field names.
+    if (page === 1) {
+      console.log(`Events payload top-level keys: ${Object.keys(payload).join(", ")}`);
+      const rawEvents = payload.events ?? payload.Events ?? payload;
+      const firstRaw = Array.isArray(rawEvents) ? rawEvents[0] : rawEvents;
+      if (firstRaw && typeof firstRaw === "object") {
+        console.log(`First raw event keys: ${Object.keys(firstRaw).join(", ")}`);
+        console.log(`First raw event: ${JSON.stringify(firstRaw)}`);
+      }
+    }
+
     const pageEvents = Array.isArray(payload.events) ? payload.events : [];
 
     events.push(...pageEvents);
