@@ -1,0 +1,58 @@
+name: Archive Season Data
+
+on:
+  schedule:
+    # Run every September 15th at midnight UTC, after the new FTC season starts.
+    - cron: "0 0 15 9 *"
+  workflow_dispatch:
+    inputs:
+      archive_season:
+        description: "Season year to archive (e.g. 2025). Defaults to current year minus 1."
+        type: string
+
+permissions:
+  contents: write
+
+jobs:
+  archive:
+    runs-on: ubuntu-latest
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: true
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: 22
+
+      - name: Determine archive season
+        id: season
+        run: |
+          if [ -n "${{ github.event.inputs.archive_season }}" ]; then
+            SEASON="${{ github.event.inputs.archive_season }}"
+          else
+            # When run in September the ending season is always current year - 1.
+            SEASON=$(( $(date +%Y) - 1 ))
+          fi
+          echo "season=$SEASON" >> "$GITHUB_OUTPUT"
+          echo "Archiving season $SEASON"
+
+      - name: Archive season data
+        run: node scripts/archive-season.mjs
+        env:
+          ARCHIVE_SEASON: ${{ steps.season.outputs.season }}
+
+      - name: Commit archive
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add public/seasons/
+          git add public/seasons.json
+          if git diff --staged --quiet; then
+            echo "No changes to commit."
+          else
+            git commit -m "chore: archive ${{ steps.season.outputs.season }} season data"
+            git push
+          fi
