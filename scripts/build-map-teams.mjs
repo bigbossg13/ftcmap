@@ -84,10 +84,16 @@ async function readTeamSource() {
       readJson(FTCSCOUT_TEAMS_PATH),
     ]);
 
-    return mergeTeamSources(
-      Array.isArray(officialCache?.teams) ? officialCache.teams : [],
-      Array.isArray(scoutCache?.teams) ? scoutCache.teams : [],
-    );
+    const officialTeams = Array.isArray(officialCache?.teams) ? officialCache.teams : [];
+    const scoutTeams = Array.isArray(scoutCache?.teams) ? scoutCache.teams : [];
+
+    if (officialTeams.length > 0) {
+      return mergeTeamSources(officialTeams, scoutTeams);
+    }
+
+    // Official file exists but is empty (e.g. API credentials not configured);
+    // fall back to FTCScout as the sole source.
+    return scoutTeams.map(normalizeScoutTeam).filter(Boolean);
   }
 
   if (hasOfficial) {

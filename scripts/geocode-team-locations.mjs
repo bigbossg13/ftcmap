@@ -225,12 +225,14 @@ async function readTeamSource() {
     const cache = JSON.parse(await readFile(OFFICIAL_TEAMS_PATH, "utf8"));
     const teams = Array.isArray(cache.teams) ? cache.teams : [];
 
-    return teams.map((team) => ({
-      number: team.number,
-      city: team.city,
-      state: team.state,
-      country: team.country,
-    }));
+    if (teams.length > 0) {
+      return teams.map((team) => ({
+        number: team.number,
+        city: team.city,
+        state: team.state,
+        country: team.country,
+      }));
+    }
   }
 
   if (existsSync(FTCSCOUT_TEAMS_PATH)) {
