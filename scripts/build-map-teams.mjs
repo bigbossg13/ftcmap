@@ -66,10 +66,10 @@ async function readTeamSource() {
     const officialTeams = Array.isArray(officialCache?.teams) ? officialCache.teams : [];
     const scoutTeams = Array.isArray(scoutCache?.teams) ? scoutCache.teams : [];
 
-    const scoutKnownNumbers = await loadScoutKnownNumbers();
+    const scoutKnownTeams = await loadScoutKnownNumbers();
 
     if (officialTeams.length > 0) {
-      return mergeTeamSources(officialTeams, scoutTeams, scoutKnownNumbers);
+      return mergeTeamSources(officialTeams, scoutTeams, scoutKnownTeams);
     }
 
     // Official file exists but is empty (e.g. API credentials not configured);
@@ -99,12 +99,12 @@ async function readTeamSource() {
 // Merge strategy:
 // 1. FTCScout is the primary "played this season" list. For each scout team,
 //    overlay official data (better location, robot name, logo) where available.
-// 2. Official teams NOT in FTCScout active list are included if they have a
-//    valid location AND FTCScout doesn't have any record of them — this catches
-//    teams in regions FTCScout doesn't index (e.g. Vietnam). If FTCScout has a
-//    record of the team but didn't mark them active, they registered but sat out
-//    this season and are excluded.
-function mergeTeamSources(officialTeams, scoutTeams, scoutKnownNumbers = null) {
+// 2. Official teams NOT in FTCScout active list are included if: FTCScout has
+//    no record of them (truly untracked region), OR FTCScout knows them AND
+//    marks them active this season (e.g. Vietnam teams in untracked events).
+//    Teams FTCScout knows but didn't mark active are excluded (registered-only).
+// scoutKnownTeams: Map<number, number[]> of team number → activeSeasons, or null
+function mergeTeamSources(officialTeams, scoutTeams, scoutKnownTeams = null) {
   const officialByNumber = new Map(
     officialTeams
       .map(normalizeOfficialTeam)
@@ -167,10 +167,17 @@ function mergeTeamSources(officialTeams, scoutTeams, scoutKnownNumbers = null) {
       continue;
     }
 
-    // If we have FTCScout's known-numbers index and the team appears in it,
-    // FTCScout has data on them but didn't mark them active — registered only.
-    if (scoutKnownNumbers !== null && scoutKnownNumbers.has(official.number)) {
-      continue;
+    // Use FTCScout's known-teams index (with activeSeasons) to decide:
+    //   - FTCScout marks team active this season → include (e.g. Vietnam teams
+    //     that compete in FTCScout-untracked events but are still marked active)
+    //   - FTCScout knows the team but NOT active this season → exclude
+    //     (registered-only, e.g. Cayman Islands teams)
+    //   - FTCScout never heard of them → include (truly untracked region)
+    if (scoutKnownTeams !== null && scoutKnownTeams.has(official.number)) {
+      const knownSeasons = scoutKnownTeams.get(official.number);
+      if (!Array.isArray(knownSeasons) || !knownSeasons.includes(season)) {
+        continue;
+      }
     }
 
     merged.set(official.number, official);
@@ -188,7 +195,14 @@ async function loadScoutKnownNumbers() {
     return null;
   }
   const cache = await readJson(FTCSCOUT_KNOWN_PATH);
-  return Array.isArray(cache?.numbers) ? new Set(cache.numbers) : null;
+  // Support new format { teams: [{ number, activeSeasons }] } and legacy { numbers: [...] }
+  if (Array.isArray(cache?.teams)) {
+    return new Map(cache.teams.map((t) => [t.number, t.activeSeasons ?? []]));
+  }
+  if (Array.isArray(cache?.numbers)) {
+    return new Map(cache.numbers.map((n) => [n, []]));
+  }
+  return null;
 }
 
 function normalizeOfficialTeam(team) {
