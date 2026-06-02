@@ -242,32 +242,55 @@ function TeamMarkerLayer({ teams }: TeamMapProps) {
       }
     });
 
+    // Collect all region-layer aggregate groups so overlap resolution treats
+    // them together (country-only and region groups share the same layer).
+    type RegionLayerGroup = AggregateClusterGroup & {
+      level: AggregateClusterLevel;
+      maxZoom: number;
+    };
+    const allRegionLayerGroups: RegionLayerGroup[] = [];
+
     countryOnlyGroups.forEach((group, countryKey) => {
       const bounds = L.latLngBounds(group.teams.map((team) => team.position));
       const position =
         COUNTRY_POSITION_OVERRIDES[countryKey] ?? getAveragePosition(group.teams);
-      const aggregateGroup: AggregateClusterGroup = {
+      allRegionLayerGroups.push({
         bounds,
         count: group.teams.length,
         label: group.label,
         position,
         teams: group.teams,
-      };
-      const marker = L.marker(position, {
-        icon: createAggregateClusterIcon(aggregateGroup, "country"),
-        title: `${group.label}: ${group.teams.length.toLocaleString()} teams`,
-        zIndexOffset: 400,
+        level: "country",
+        maxZoom: 8,
+      });
+    });
+
+    regionClusterPlan.groups.forEach((group) => {
+      allRegionLayerGroups.push({ ...group, level: "region", maxZoom: 7 });
+    });
+
+    const regionPositions = resolveOverlaps(allRegionLayerGroups, map, 6);
+    allRegionLayerGroups.forEach((group, i) => {
+      const marker = L.marker(regionPositions[i], {
+        icon: createAggregateClusterIcon(group, group.level),
+        title: `${group.label}: ${group.count.toLocaleString()} teams`,
+        zIndexOffset: group.level === "country" ? 400 : 300,
       });
 
       marker.on("click", () => {
-        map.fitBounds(bounds.pad(0.12), { animate: true, maxZoom: 8 });
+        map.fitBounds(group.bounds.pad(0.12), {
+          animate: true,
+          maxZoom: group.maxZoom,
+        });
       });
 
       regionLayer.addLayer(marker);
     });
 
-    buildAggregateClusterGroups(teams, "country").forEach((group) => {
-      const marker = L.marker(group.position, {
+    const rawCountryGroups = buildAggregateClusterGroups(teams, "country");
+    const countryPositions = resolveOverlaps(rawCountryGroups, map, 4);
+    rawCountryGroups.forEach((group, i) => {
+      const marker = L.marker(countryPositions[i], {
         icon: createAggregateClusterIcon(group, "country"),
         title: `${group.label}: ${group.count.toLocaleString()} teams`,
         zIndexOffset: 400,
@@ -300,8 +323,10 @@ function TeamMarkerLayer({ teams }: TeamMapProps) {
       regionLayer.addLayer(marker);
     });
 
-    buildAggregateClusterGroups(teams, "continent").forEach((group) => {
-      const marker = L.marker(group.position, {
+    const rawContinentGroups = buildAggregateClusterGroups(teams, "continent");
+    const continentPositions = resolveOverlaps(rawContinentGroups, map, 2);
+    rawContinentGroups.forEach((group, i) => {
+      const marker = L.marker(continentPositions[i], {
         icon: createAggregateClusterIcon(group, "continent"),
         title: `${group.label}: ${group.count.toLocaleString()} teams`,
         zIndexOffset: 500,
@@ -401,6 +426,19 @@ function createTeamIcon(team: PositionedTeam) {
   });
 }
 
+// Maps each size class to its pixel diameter. Must stay in sync with index.css.
+const CLUSTER_SIZE_PX: Record<string, number> = {
+  "team-cluster--xs": 30,
+  "team-cluster--sm": 42,
+  "team-cluster--md": 54,
+  "team-cluster--lg": 64,
+  "team-cluster--xl": 74,
+};
+
+function getIconPxForCount(count: number): number {
+  return CLUSTER_SIZE_PX[getClusterSizeClass(count)];
+}
+
 function getClusterRadius(zoom: number) {
   if (zoom <= 6) {
     return 68;
@@ -416,12 +454,13 @@ function getClusterRadius(zoom: number) {
 function createClusterIcon(cluster: L.MarkerCluster, level: ClusterLevel) {
   const count = cluster.getChildCount();
   const summary = getClusterSummary(cluster, level);
+  const px = getIconPxForCount(count);
 
   return L.divIcon({
     className: "team-cluster-icon",
     html: renderClusterHtml(count, summary.label, summary.level),
-    iconSize: [72, 72],
-    iconAnchor: [36, 36],
+    iconSize: [px, px],
+    iconAnchor: [px / 2, px / 2],
   });
 }
 
@@ -429,11 +468,76 @@ function createAggregateClusterIcon(
   group: AggregateClusterGroup,
   level: AggregateClusterLevel,
 ) {
+  const px = getIconPxForCount(group.count);
+
   return L.divIcon({
     className: "team-cluster-icon",
     html: renderClusterHtml(group.count, group.label, level, true),
-    iconSize: [72, 72],
-    iconAnchor: [36, 36],
+    iconSize: [px, px],
+    iconAnchor: [px / 2, px / 2],
+  });
+}
+
+// Iteratively pushes aggregate markers apart in pixel space so they don't
+// fully overlap. refZoom is the zoom at which separation is guaranteed;
+// at lower zooms markers may still be close (but never worse than geographic).
+function resolveOverlaps(
+  groups: AggregateClusterGroup[],
+  map: L.Map,
+  refZoom: number,
+): [number, number][] {
+  if (groups.length <= 1) return groups.map((g) => g.position);
+
+  const maxDrift = 52; // px at refZoom — caps geographic distortion
+  const padding = 5; // extra px gap between bubble edges
+
+  const pts = groups.map((g) => {
+    const p = map.project(L.latLng(g.position[0], g.position[1]), refZoom);
+    return {
+      x: p.x,
+      y: p.y,
+      ox: p.x,
+      oy: p.y,
+      r: getIconPxForCount(g.count) / 2 + padding,
+    };
+  });
+
+  for (let iter = 0; iter < 120; iter++) {
+    let anyOverlap = false;
+    for (let i = 0; i < pts.length; i++) {
+      for (let j = i + 1; j < pts.length; j++) {
+        const dx = pts[j].x - pts[i].x;
+        const dy = pts[j].y - pts[i].y;
+        const distSq = dx * dx + dy * dy;
+        const minDist = pts[i].r + pts[j].r;
+        if (distSq < minDist * minDist) {
+          anyOverlap = true;
+          const dist = Math.sqrt(distSq) || 0.1;
+          const push = (minDist - dist) / 2 + 0.5;
+          const nx = dx / dist;
+          const ny = dy / dist;
+          pts[i].x -= nx * push;
+          pts[i].y -= ny * push;
+          pts[j].x += nx * push;
+          pts[j].y += ny * push;
+          for (const pt of [pts[i], pts[j]]) {
+            const ddx = pt.x - pt.ox;
+            const ddy = pt.y - pt.oy;
+            const d = Math.sqrt(ddx * ddx + ddy * ddy);
+            if (d > maxDrift) {
+              pt.x = pt.ox + (ddx / d) * maxDrift;
+              pt.y = pt.oy + (ddy / d) * maxDrift;
+            }
+          }
+        }
+      }
+    }
+    if (!anyOverlap) break;
+  }
+
+  return pts.map((p) => {
+    const ll = map.unproject(L.point(p.x, p.y), refZoom);
+    return [ll.lat, ll.lng];
   });
 }
 
@@ -449,13 +553,11 @@ function renderClusterHtml(
 }
 
 function getClusterSizeClass(count: number) {
-  return count >= 1000
-    ? "team-cluster--xl"
-    : count >= 100
-      ? "team-cluster--lg"
-      : count >= 10
-        ? "team-cluster--md"
-        : "team-cluster--sm";
+  if (count >= 1000) return "team-cluster--xl";
+  if (count >= 100) return "team-cluster--lg";
+  if (count >= 10) return "team-cluster--md";
+  if (count >= 3) return "team-cluster--sm";
+  return "team-cluster--xs";
 }
 
 function buildAggregateClusterGroups(
