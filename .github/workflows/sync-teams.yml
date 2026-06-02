@@ -7,9 +7,9 @@ on:
   workflow_dispatch:
     inputs:
       use_nominatim:
-        description: "Use Nominatim for online geocoding (slower, more accurate)"
+        description: "Use Nominatim for online geocoding (slower, more accurate for small cities)"
         type: boolean
-        default: false
+        default: true
 
 permissions:
   contents: write
@@ -51,7 +51,7 @@ jobs:
       - name: Geocode team locations
         run: npm run sync:geocodes
         env:
-          GEOCODE_USE_NOMINATIM: ${{ github.event.inputs.use_nominatim == 'true' && 'true' || 'false' }}
+          GEOCODE_USE_NOMINATIM: ${{ github.event.inputs.use_nominatim != 'false' && 'true' || 'false' }}
           GEOCODE_EMAIL: ${{ secrets.GEOCODE_EMAIL }}
           GEOCODE_USER_AGENT: "ftcmap/1.0 geocoder (https://github.com/bigbossg13/ftcmap)"
 
