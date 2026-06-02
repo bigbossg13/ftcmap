@@ -76,6 +76,12 @@ const COUNTRY_ALIASES = {
 // from the all-the-cities canonical name. Format: [countryCode, teamSpelling, dbKey]
 // where both spellings are pre-normalized (lowercase, diacritics stripped).
 // Nominatim handles all of these when available; this covers the offline path.
+// "al ajaylat" → "ajaylat", "az zuwaytinah" → "zuwaytinah", etc.
+// Strips romanized Arabic definite articles (including sun-letter assimilations)
+// so teams that omit "Al-" from a city name still get an offline match.
+// Returns null when no article prefix is present.
+const ARABIC_ARTICLES = ["ash ", "ath ", "al ", "az ", "as ", "at ", "ad ", "an ", "ar "];
+
 const OFFLINE_CITY_ALIASES = [
   ["LY", "banghazi", "benghazi"],
   ["LY", "misurata", "misratah"],
@@ -689,11 +695,6 @@ function toNormalizedRegionCode(state) {
   return regionCode ? normalizeLocationKey(regionCode).toUpperCase() : "";
 }
 
-// "al ajaylat" → "ajaylat", "az zuwaytinah" → "zuwaytinah", etc.
-// Strips romanized Arabic definite articles (including sun-letter assimilations)
-// so teams that omit "Al-" from a city name still get an offline match.
-// Returns null when no article prefix is present.
-const ARABIC_ARTICLES = ["ash ", "ath ", "al ", "az ", "as ", "at ", "ad ", "an ", "ar "];
 function stripLeadingArticle(cityKey) {
   for (const article of ARABIC_ARTICLES) {
     if (cityKey.startsWith(article) && cityKey.length > article.length) {
