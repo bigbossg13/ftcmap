@@ -396,7 +396,7 @@ function isCachedCountryMatch(location, geocode) {
 }
 
 function isCoordinateInExpectedCountry(location, lat, lng) {
-  const countryCode = toCountryCode(location.country);
+  const countryCode = resolveCountryCode(location);
 
   if (!countryCode) {
     return true;
@@ -450,7 +450,7 @@ function findNearestCity(lat, lng, predicate = () => true) {
 
 function getCandidateCities(location) {
   const cityKeys = getCityKeyCandidates(location.city);
-  const countryCode = toCountryCode(location.country);
+  const countryCode = resolveCountryCode(location);
 
   if (cityKeys.length === 0 || !countryCode) {
     return [];
@@ -502,7 +502,7 @@ async function geocodeOnline(query, location) {
     params.set("email", CONTACT_EMAIL);
   }
 
-  const countryCode = toCountryCode(location.country);
+  const countryCode = resolveCountryCode(location);
 
   if (countryCode) {
     params.set("countrycodes", countryCode.toLowerCase());
@@ -637,6 +637,22 @@ function addCityToIndex(index, key, city) {
   }
 
   index.set(key, matches);
+}
+
+// US territories are stored as their own country codes in all-the-cities
+// (PR, VI, GU, AS, MP) but FTC teams register them as country=USA with the
+// territory abbreviation as state. resolveCountryCode handles this so offline
+// city lookup and Nominatim validation both work correctly for territory teams.
+const US_TERRITORY_STATES = { PR: "PR", VI: "VI", GU: "GU", AS: "AS", MP: "MP" };
+
+function resolveCountryCode(location) {
+  const countryCode = toCountryCode(location.country);
+  if (countryCode === "US") {
+    const stateCode = toRegionCode(location.state ?? "");
+    const territoryCode = US_TERRITORY_STATES[stateCode];
+    if (territoryCode) return territoryCode;
+  }
+  return countryCode;
 }
 
 function toCountryCode(country) {
