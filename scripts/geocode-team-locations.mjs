@@ -594,6 +594,12 @@ function buildCityIndex(cityList) {
       if (stripped) {
         addCityToIndex(index, `${city.country}:${stripped}`, city);
       }
+      // Index Arabic/romanized definite-article cities without the article so
+      // teams that write "Ajaylat" instead of "Al Ajaylat" still match.
+      const noArticle = stripLeadingArticle(cityKey);
+      if (noArticle) {
+        addCityToIndex(index, `${city.country}:${noArticle}`, city);
+      }
     });
 
     normalizeLocationPart(city.altName)
@@ -653,6 +659,20 @@ function toNormalizedRegionCode(state) {
   const regionCode = toRegionCode(state);
 
   return regionCode ? normalizeLocationKey(regionCode).toUpperCase() : "";
+}
+
+// "al ajaylat" → "ajaylat", "az zuwaytinah" → "zuwaytinah", etc.
+// Strips romanized Arabic definite articles (including sun-letter assimilations)
+// so teams that omit "Al-" from a city name still get an offline match.
+// Returns null when no article prefix is present.
+const ARABIC_ARTICLES = ["ash ", "ath ", "al ", "az ", "as ", "at ", "ad ", "an ", "ar "];
+function stripLeadingArticle(cityKey) {
+  for (const article of ARABIC_ARTICLES) {
+    if (cityKey.startsWith(article) && cityKey.length > article.length) {
+      return cityKey.slice(article.length);
+    }
+  }
+  return null;
 }
 
 // "washington d c" → "washington" (strips trailing single-char abbreviation words
