@@ -42,6 +42,7 @@ const COUNTRY_ALIASES = {
   BRAZIL: "BR",
   CAN: "CA",
   CANADA: "CA",
+  CHINESE_TAIPEI: "TW",
   CHN: "CN",
   CHINA: "CN",
   DEU: "DE",
@@ -58,6 +59,7 @@ const COUNTRY_ALIASES = {
   NEW_ZEALAND: "NZ",
   SOUTH_KOREA: "KR",
   SPAIN: "ES",
+  TAIWAN: "TW",
   TURKEY: "TR",
   TURKIYE: "TR",
   INDEPENDENT: "RU",
@@ -70,6 +72,28 @@ const COUNTRY_ALIASES = {
   US: "US",
   USA: "US",
 };
+// Extra offline lookup keys for cities whose FTC-registered spelling differs
+// from the all-the-cities canonical name. Format: [countryCode, teamSpelling, dbKey]
+// where both spellings are pre-normalized (lowercase, diacritics stripped).
+// Nominatim handles all of these when available; this covers the offline path.
+const OFFLINE_CITY_ALIASES = [
+  ["LY", "banghazi", "benghazi"],
+  ["LY", "misurata", "misratah"],
+  ["LY", "gheryan", "gharyan"],
+  ["LY", "garyan", "gharyan"],
+  ["LY", "tarhona", "tarhuna"],
+  ["LY", "zawia", "zawiya"],
+  ["LY", "zwara", "zuwarah"],
+  ["LY", "sebha", "sabha"],
+  ["LY", "ajaylat", "al ajaylat"],
+  ["LY", "khums", "al khums"],
+  ["LY", "bayda", "al bayda"],
+  ["LY", "albyda", "al bayda"],
+  ["LY", "sirt", "sirte"],
+  ["LY", "darna", "darnah"],
+  ["LY", "baniwalid", "bani walid"],
+];
+
 const REGION_ALIASES = {
   ALABAMA: "AL",
   ALASKA: "AK",
@@ -580,6 +604,13 @@ function buildCityIndex(cityList) {
         addCityToIndex(index, `${city.country}:${cityKey}`, city);
       });
   });
+
+  for (const [country, alias, canonical] of OFFLINE_CITY_ALIASES) {
+    const existing = index.get(`${country}:${canonical}`);
+    if (existing && !index.has(`${country}:${alias}`)) {
+      index.set(`${country}:${alias}`, existing);
+    }
+  }
 
   index.forEach((matches) => {
     matches.sort((a, b) => (b.population ?? 0) - (a.population ?? 0));
