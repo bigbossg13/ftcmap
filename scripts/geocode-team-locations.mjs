@@ -334,6 +334,14 @@ function geocodeOffline(location) {
   }
 
   const stateMatches = getStateMatches(candidates, location.state);
+
+  // If a state was specified but no candidate is in that state, return null rather
+  // than picking the highest-population city with the same name in a different state
+  // (e.g., Richland WA would otherwise win over Richland MI because WA is much larger).
+  if (stateMatches.length === 0 && toNormalizedRegionCode(location.state)) {
+    return null;
+  }
+
   const match = (stateMatches.length > 0 ? stateMatches : candidates)[0];
 
   if (!match) {
@@ -377,6 +385,10 @@ function isCachedGeocodeUsable(location, geocode) {
   const stateMatches = candidates.filter((city) => isRegionMatch(city, stateKey));
 
   if (stateMatches.length === 0) {
+    // City not in offline DB for the expected state. If the cache entry came from
+    // all-the-cities, it was produced by the wrong-state fallback (e.g., Richland WA
+    // used for Richland MI). Invalidate so Nominatim can find the correct location.
+    if (geocode.source === "all-the-cities") return false;
     return true;
   }
 
