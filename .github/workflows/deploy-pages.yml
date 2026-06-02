@@ -5,6 +5,10 @@ on:
     branches:
       - main
   workflow_dispatch:
+  workflow_run:
+    workflows: ["Sync Team Data"]
+    types: [completed]
+    branches: [main]
 
 permissions:
   contents: read
