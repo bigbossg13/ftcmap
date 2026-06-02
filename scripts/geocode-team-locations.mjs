@@ -17,7 +17,6 @@ const USER_AGENT =
   process.env.GEOCODE_USER_AGENT ??
   "ftcmap/1.0 geocoder (https://github.com/bigbossg13/ftcmap)";
 const CONTACT_EMAIL = process.env.GEOCODE_EMAIL;
-const USE_NOMINATIM = process.env.GEOCODE_USE_NOMINATIM === "true";
 const FLUSH_EVERY_SUCCESSFUL_GEOCODES = Number(
   process.env.GEOCODE_FLUSH_EVERY ?? 25,
 );
@@ -25,8 +24,15 @@ const CACHE_COUNTRY_MISMATCH_MAX_DISTANCE_KM = 50;
 const CACHE_EXPECTED_COUNTRY_MAX_DISTANCE_KM = 300;
 const CACHE_STATE_MATCH_MAX_DISTANCE_KM = 50;
 
+let USE_NOMINATIM = process.env.GEOCODE_USE_NOMINATIM === "true";
+
 if (USE_NOMINATIM && !CONTACT_EMAIL) {
-  throw new Error("Set GEOCODE_EMAIL before enabling GEOCODE_USE_NOMINATIM.");
+  console.warn(
+    "Warning: GEOCODE_USE_NOMINATIM is set but GEOCODE_EMAIL is not — " +
+      "falling back to offline geocoding only. Teams in small cities may not appear on the map. " +
+      "Set the GEOCODE_EMAIL secret to enable Nominatim.",
+  );
+  USE_NOMINATIM = false;
 }
 
 const COUNTRY_ALIASES = {
