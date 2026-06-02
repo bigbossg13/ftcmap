@@ -3,6 +3,7 @@ import { dirname, resolve } from "node:path";
 
 const API_BASE_URL = "https://ftc-api.firstinspires.org/v2.0";
 const OUTPUT_PATH = resolve("public/ftc-official-teams.json");
+const COMPETED_PATH = resolve("public/ftc-events-competed-numbers.json");
 
 const season = Number(process.env.FTC_EVENTS_SEASON ?? getCurrentFtcSeason());
 const username = process.env.FTC_EVENTS_USERNAME;
@@ -19,7 +20,12 @@ const authorization = `Basic ${Buffer.from(`${username}:${token}`).toString(
   "base64",
 )}`;
 
-const teams = await fetchAllTeams();
+// Fetch registered teams and event participation in parallel.
+const [teams, competedNumbers] = await Promise.all([
+  fetchAllTeams(),
+  fetchEventParticipationNumbers(),
+]);
+
 const cache = {
   generatedAt: new Date().toISOString(),
   season,
@@ -28,12 +34,24 @@ const cache = {
   teams,
 };
 
+const competedCache = {
+  generatedAt: new Date().toISOString(),
+  season,
+  count: competedNumbers.size,
+  numbers: [...competedNumbers].sort((a, b) => a - b),
+};
+
 await mkdir(dirname(OUTPUT_PATH), { recursive: true });
 await writeFile(`${OUTPUT_PATH}.tmp`, `${JSON.stringify(cache, null, 2)}\n`);
 await rename(`${OUTPUT_PATH}.tmp`, OUTPUT_PATH);
+await writeFile(`${COMPETED_PATH}.tmp`, `${JSON.stringify(competedCache)}\n`);
+await rename(`${COMPETED_PATH}.tmp`, COMPETED_PATH);
 
 console.log(
   `Wrote ${teams.length.toLocaleString()} registered FTC teams for ${season} to ${OUTPUT_PATH}`,
+);
+console.log(
+  `Wrote ${competedNumbers.size.toLocaleString()} FTC Events event-roster team numbers to ${COMPETED_PATH}`,
 );
 
 async function fetchAllTeams() {
@@ -42,7 +60,7 @@ async function fetchAllTeams() {
   let pageTotal = 1;
 
   do {
-    const payload = await fetchTeamPage(page);
+    const payload = await fetchAuthorized(`${API_BASE_URL}/${season}/teams?page=${page}`);
     const pageTeams = Array.isArray(payload.teams) ? payload.teams : [];
 
     pageTeams.forEach((team) => {
@@ -60,8 +78,79 @@ async function fetchAllTeams() {
   return [...teamsByNumber.values()].sort((a, b) => a.number - b.number);
 }
 
-async function fetchTeamPage(page) {
-  const url = `${API_BASE_URL}/${season}/teams?page=${page}`;
+// Fetches all FTC Events event rosters for the season and returns the set of
+// team numbers that appear in at least one official event. This is a more
+// authoritative "competed" signal than activeSeasons alone, and covers regions
+// (like Vietnam) that FTCScout's eventsSearch may miss.
+async function fetchEventParticipationNumbers() {
+  let events;
+  try {
+    events = await fetchAllEvents();
+  } catch (err) {
+    console.warn(`Warning: could not fetch events list — ${err.message}`);
+    return new Set();
+  }
+
+  console.log(`Found ${events.length} events — fetching team rosters...`);
+
+  const teamNumbers = new Set();
+  const BATCH = 20;
+
+  for (let i = 0; i < events.length; i += BATCH) {
+    const batch = events.slice(i, i + BATCH);
+    const results = await Promise.allSettled(
+      batch.map((event) => fetchTeamsForEvent(event.code)),
+    );
+    for (let j = 0; j < results.length; j++) {
+      const result = results[j];
+      if (result.status === "fulfilled") {
+        for (const n of result.value) teamNumbers.add(n);
+      } else {
+        console.warn(
+          `Warning: teams for event ${batch[j].code} failed — ${result.reason.message}`,
+        );
+      }
+    }
+  }
+
+  return teamNumbers;
+}
+
+async function fetchAllEvents() {
+  const events = [];
+  let page = 1;
+  let pageTotal = 1;
+
+  do {
+    const payload = await fetchAuthorized(`${API_BASE_URL}/${season}/events?page=${page}`);
+    events.push(...(Array.isArray(payload.events) ? payload.events : []));
+    pageTotal = Number(payload.pageTotal || 1);
+    page++;
+  } while (page <= pageTotal);
+
+  // Only events with a code (required to fetch rosters).
+  return events.filter((e) => e.code);
+}
+
+async function fetchTeamsForEvent(eventCode) {
+  const numbers = [];
+  let page = 1;
+  let pageTotal = 1;
+
+  do {
+    const payload = await fetchAuthorized(
+      `${API_BASE_URL}/${season}/teams?eventCode=${encodeURIComponent(eventCode)}&page=${page}`,
+    );
+    const teams = Array.isArray(payload.teams) ? payload.teams : [];
+    numbers.push(...teams.map((t) => t.teamNumber).filter((n) => typeof n === "number"));
+    pageTotal = Number(payload.pageTotal || 1);
+    page++;
+  } while (page <= pageTotal);
+
+  return numbers;
+}
+
+async function fetchAuthorized(url) {
   const response = await fetch(url, {
     headers: { Authorization: authorization, Accept: "application/json" },
   });
