@@ -5,6 +5,7 @@ import { resolve } from "node:path";
 const OFFICIAL_TEAMS_PATH = resolve("public/ftc-official-teams.json");
 const FTCSCOUT_TEAMS_PATH = resolve("public/ftcscout-teams.json");
 const FTCSCOUT_KNOWN_PATH = resolve("public/ftcscout-known-numbers.json");
+const FTC_EVENTS_COMPETED_PATH = resolve("public/ftc-events-competed-numbers.json");
 const GEOCODES_PATH = resolve("public/team-geocodes.json");
 const OUTPUT_PATH = resolve("public/map-teams.json");
 
@@ -66,10 +67,13 @@ async function readTeamSource() {
     const officialTeams = Array.isArray(officialCache?.teams) ? officialCache.teams : [];
     const scoutTeams = Array.isArray(scoutCache?.teams) ? scoutCache.teams : [];
 
-    const scoutKnownNumbers = await loadScoutKnownNumbers();
+    const [scoutKnownTeams, ftcEventsCompeted] = await Promise.all([
+      loadScoutKnownNumbers(),
+      loadFtcEventsCompeted(),
+    ]);
 
     if (officialTeams.length > 0) {
-      return mergeTeamSources(officialTeams, scoutTeams, scoutKnownNumbers);
+      return mergeTeamSources(officialTeams, scoutTeams, scoutKnownTeams, ftcEventsCompeted);
     }
 
     // Official file exists but is empty (e.g. API credentials not configured);
@@ -99,12 +103,15 @@ async function readTeamSource() {
 // Merge strategy:
 // 1. FTCScout is the primary "played this season" list. For each scout team,
 //    overlay official data (better location, robot name, logo) where available.
-// 2. Official teams NOT in FTCScout active list are included if they have a
-//    valid location AND FTCScout doesn't have any record of them — this catches
-//    teams in regions FTCScout doesn't index (e.g. Vietnam). If FTCScout has a
-//    record of the team but didn't mark them active, they registered but sat out
-//    this season and are excluded.
-function mergeTeamSources(officialTeams, scoutTeams, scoutKnownNumbers = null) {
+// 2. Official teams NOT in FTCScout active list are filtered by:
+//    a. FTC Events event rosters (primary, when available): team appeared in at
+//       least one official FTC event roster → include; otherwise → exclude.
+//    b. FTCScout activeSeasons (fallback): FTCScout marks team active this
+//       season → include; FTCScout knows but not active → exclude; FTCScout
+//       has no record → include (truly untracked region).
+// scoutKnownTeams: Map<number, number[]> of team number → activeSeasons, or null
+// ftcEventsCompeted: Set<number> of team numbers in any FTC Events roster, or null
+function mergeTeamSources(officialTeams, scoutTeams, scoutKnownTeams = null, ftcEventsCompeted = null) {
   const officialByNumber = new Map(
     officialTeams
       .map(normalizeOfficialTeam)
@@ -167,10 +174,18 @@ function mergeTeamSources(officialTeams, scoutTeams, scoutKnownNumbers = null) {
       continue;
     }
 
-    // If we have FTCScout's known-numbers index and the team appears in it,
-    // FTCScout has data on them but didn't mark them active — registered only.
-    if (scoutKnownNumbers !== null && scoutKnownNumbers.has(official.number)) {
-      continue;
+    if (ftcEventsCompeted !== null) {
+      // Primary: FTC Events event rosters are authoritative — covers all regions
+      // including Vietnam. Only include teams on at least one official event roster.
+      if (!ftcEventsCompeted.has(official.number)) {
+        continue;
+      }
+    } else if (scoutKnownTeams !== null && scoutKnownTeams.has(official.number)) {
+      // Fallback: FTCScout activeSeasons when FTC Events data isn't available.
+      const knownSeasons = scoutKnownTeams.get(official.number);
+      if (!Array.isArray(knownSeasons) || !knownSeasons.includes(season)) {
+        continue;
+      }
     }
 
     merged.set(official.number, official);
@@ -188,7 +203,22 @@ async function loadScoutKnownNumbers() {
     return null;
   }
   const cache = await readJson(FTCSCOUT_KNOWN_PATH);
-  return Array.isArray(cache?.numbers) ? new Set(cache.numbers) : null;
+  // Support new format { teams: [{ number, activeSeasons }] } and legacy { numbers: [...] }
+  if (Array.isArray(cache?.teams)) {
+    return new Map(cache.teams.map((t) => [t.number, t.activeSeasons ?? []]));
+  }
+  if (Array.isArray(cache?.numbers)) {
+    return new Map(cache.numbers.map((n) => [n, []]));
+  }
+  return null;
+}
+
+async function loadFtcEventsCompeted() {
+  if (!existsSync(FTC_EVENTS_COMPETED_PATH)) return null;
+  const cache = await readJson(FTC_EVENTS_COMPETED_PATH);
+  // Treat an empty competed file the same as missing — fall back to FTCScout.
+  if (!Array.isArray(cache?.numbers) || cache.numbers.length === 0) return null;
+  return new Set(cache.numbers);
 }
 
 function normalizeOfficialTeam(team) {

@@ -94,9 +94,14 @@ const cacheTeams = allTeams
   .filter((team) => playedTeamNumbers.has(team.number))
   .sort((a, b) => a.number - b.number);
 
-// All team numbers FTCScout has any record of (used by build-map-teams
-// to distinguish "FTCScout knows but didn't compete" from "truly untracked").
-const knownNumbers = allTeams.map((t) => t.number).sort((a, b) => a - b);
+// All teams FTCScout has any record of, with their activeSeasons.
+// Used by build-map-teams to distinguish:
+//   - "FTCScout knows AND marks active this season" → include (e.g. Vietnamese teams)
+//   - "FTCScout knows but NOT active this season" → exclude (e.g. registered-only)
+//   - "FTCScout never heard of them" → include (truly untracked region)
+const knownTeams = allTeams
+  .map((t) => ({ number: t.number, activeSeasons: Array.isArray(t.activeSeasons) ? t.activeSeasons : [] }))
+  .sort((a, b) => a.number - b.number);
 
 const cache = {
   generatedAt: new Date().toISOString(),
@@ -108,8 +113,8 @@ const cache = {
 
 const knownCache = {
   generatedAt: new Date().toISOString(),
-  count: knownNumbers.length,
-  numbers: knownNumbers,
+  count: knownTeams.length,
+  teams: knownTeams,
 };
 
 await mkdir(dirname(OUTPUT_PATH), { recursive: true });
@@ -122,7 +127,7 @@ console.log(
   `Wrote ${cacheTeams.length.toLocaleString()} FTCScout event-playing teams for ${season} to ${OUTPUT_PATH}`,
 );
 console.log(
-  `Wrote ${knownNumbers.length.toLocaleString()} known FTCScout team numbers to ${KNOWN_NUMBERS_PATH}`,
+  `Wrote ${knownTeams.length.toLocaleString()} known FTCScout teams to ${KNOWN_NUMBERS_PATH}`,
 );
 
 async function fetchRestTeams() {
