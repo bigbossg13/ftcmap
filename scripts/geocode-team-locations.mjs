@@ -17,7 +17,6 @@ const USER_AGENT =
   process.env.GEOCODE_USER_AGENT ??
   "ftcmap/1.0 geocoder (https://github.com/bigbossg13/ftcmap)";
 const CONTACT_EMAIL = process.env.GEOCODE_EMAIL;
-const USE_NOMINATIM = process.env.GEOCODE_USE_NOMINATIM === "true";
 const FLUSH_EVERY_SUCCESSFUL_GEOCODES = Number(
   process.env.GEOCODE_FLUSH_EVERY ?? 25,
 );
@@ -25,8 +24,15 @@ const CACHE_COUNTRY_MISMATCH_MAX_DISTANCE_KM = 50;
 const CACHE_EXPECTED_COUNTRY_MAX_DISTANCE_KM = 300;
 const CACHE_STATE_MATCH_MAX_DISTANCE_KM = 50;
 
+let USE_NOMINATIM = process.env.GEOCODE_USE_NOMINATIM === "true";
+
 if (USE_NOMINATIM && !CONTACT_EMAIL) {
-  throw new Error("Set GEOCODE_EMAIL before enabling GEOCODE_USE_NOMINATIM.");
+  console.warn(
+    "Warning: GEOCODE_USE_NOMINATIM is set but GEOCODE_EMAIL is not — " +
+      "falling back to offline geocoding only. Teams in small cities may not appear on the map. " +
+      "Set the GEOCODE_EMAIL secret to enable Nominatim.",
+  );
+  USE_NOMINATIM = false;
 }
 
 const COUNTRY_ALIASES = {
@@ -36,6 +42,7 @@ const COUNTRY_ALIASES = {
   BRAZIL: "BR",
   CAN: "CA",
   CANADA: "CA",
+  CHINESE_TAIPEI: "TW",
   CHN: "CN",
   CHINA: "CN",
   DEU: "DE",
@@ -52,6 +59,7 @@ const COUNTRY_ALIASES = {
   NEW_ZEALAND: "NZ",
   SOUTH_KOREA: "KR",
   SPAIN: "ES",
+  TAIWAN: "TW",
   TURKEY: "TR",
   TURKIYE: "TR",
   INDEPENDENT: "RU",
@@ -64,6 +72,28 @@ const COUNTRY_ALIASES = {
   US: "US",
   USA: "US",
 };
+// Extra offline lookup keys for cities whose FTC-registered spelling differs
+// from the all-the-cities canonical name. Format: [countryCode, teamSpelling, dbKey]
+// where both spellings are pre-normalized (lowercase, diacritics stripped).
+// Nominatim handles all of these when available; this covers the offline path.
+const OFFLINE_CITY_ALIASES = [
+  ["LY", "banghazi", "benghazi"],
+  ["LY", "misurata", "misratah"],
+  ["LY", "gheryan", "gharyan"],
+  ["LY", "garyan", "gharyan"],
+  ["LY", "tarhona", "tarhuna"],
+  ["LY", "zawia", "zawiya"],
+  ["LY", "zwara", "zuwarah"],
+  ["LY", "sebha", "sabha"],
+  ["LY", "ajaylat", "al ajaylat"],
+  ["LY", "khums", "al khums"],
+  ["LY", "bayda", "al bayda"],
+  ["LY", "albyda", "al bayda"],
+  ["LY", "sirt", "sirte"],
+  ["LY", "darna", "darnah"],
+  ["LY", "baniwalid", "bani walid"],
+];
+
 const REGION_ALIASES = {
   ALABAMA: "AL",
   ALASKA: "AK",
@@ -366,7 +396,7 @@ function isCachedCountryMatch(location, geocode) {
 }
 
 function isCoordinateInExpectedCountry(location, lat, lng) {
-  const countryCode = toCountryCode(location.country);
+  const countryCode = resolveCountryCode(location);
 
   if (!countryCode) {
     return true;
@@ -420,7 +450,7 @@ function findNearestCity(lat, lng, predicate = () => true) {
 
 function getCandidateCities(location) {
   const cityKeys = getCityKeyCandidates(location.city);
-  const countryCode = toCountryCode(location.country);
+  const countryCode = resolveCountryCode(location);
 
   if (cityKeys.length === 0 || !countryCode) {
     return [];
@@ -472,7 +502,7 @@ async function geocodeOnline(query, location) {
     params.set("email", CONTACT_EMAIL);
   }
 
-  const countryCode = toCountryCode(location.country);
+  const countryCode = resolveCountryCode(location);
 
   if (countryCode) {
     params.set("countrycodes", countryCode.toLowerCase());
@@ -564,6 +594,12 @@ function buildCityIndex(cityList) {
       if (stripped) {
         addCityToIndex(index, `${city.country}:${stripped}`, city);
       }
+      // Index Arabic/romanized definite-article cities without the article so
+      // teams that write "Ajaylat" instead of "Al Ajaylat" still match.
+      const noArticle = stripLeadingArticle(cityKey);
+      if (noArticle) {
+        addCityToIndex(index, `${city.country}:${noArticle}`, city);
+      }
     });
 
     normalizeLocationPart(city.altName)
@@ -574,6 +610,13 @@ function buildCityIndex(cityList) {
         addCityToIndex(index, `${city.country}:${cityKey}`, city);
       });
   });
+
+  for (const [country, alias, canonical] of OFFLINE_CITY_ALIASES) {
+    const existing = index.get(`${country}:${canonical}`);
+    if (existing && !index.has(`${country}:${alias}`)) {
+      index.set(`${country}:${alias}`, existing);
+    }
+  }
 
   index.forEach((matches) => {
     matches.sort((a, b) => (b.population ?? 0) - (a.population ?? 0));
@@ -596,6 +639,22 @@ function addCityToIndex(index, key, city) {
   index.set(key, matches);
 }
 
+// US territories are stored as their own country codes in all-the-cities
+// (PR, VI, GU, AS, MP) but FTC teams register them as country=USA with the
+// territory abbreviation as state. resolveCountryCode handles this so offline
+// city lookup and Nominatim validation both work correctly for territory teams.
+const US_TERRITORY_STATES = { PR: "PR", VI: "VI", GU: "GU", AS: "AS", MP: "MP" };
+
+function resolveCountryCode(location) {
+  const countryCode = toCountryCode(location.country);
+  if (countryCode === "US") {
+    const stateCode = toRegionCode(location.state ?? "");
+    const territoryCode = US_TERRITORY_STATES[stateCode];
+    if (territoryCode) return territoryCode;
+  }
+  return countryCode;
+}
+
 function toCountryCode(country) {
   const countryKey = normalizeLocationKey(country).toUpperCase().replace(/\s+/g, "_");
 
@@ -616,6 +675,20 @@ function toNormalizedRegionCode(state) {
   const regionCode = toRegionCode(state);
 
   return regionCode ? normalizeLocationKey(regionCode).toUpperCase() : "";
+}
+
+// "al ajaylat" → "ajaylat", "az zuwaytinah" → "zuwaytinah", etc.
+// Strips romanized Arabic definite articles (including sun-letter assimilations)
+// so teams that omit "Al-" from a city name still get an offline match.
+// Returns null when no article prefix is present.
+const ARABIC_ARTICLES = ["ash ", "ath ", "al ", "az ", "as ", "at ", "ad ", "an ", "ar "];
+function stripLeadingArticle(cityKey) {
+  for (const article of ARABIC_ARTICLES) {
+    if (cityKey.startsWith(article) && cityKey.length > article.length) {
+      return cityKey.slice(article.length);
+    }
+  }
+  return null;
 }
 
 // "washington d c" → "washington" (strips trailing single-char abbreviation words

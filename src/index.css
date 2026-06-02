@@ -195,14 +195,28 @@ body {
     linear-gradient(135deg, rgb(5 150 105 / 0.95), rgb(13 148 136 / 0.95));
 }
 
+.team-cluster--xs {
+  width: 1.875rem;
+  height: 1.875rem;
+}
+
+.team-cluster--xs .team-cluster-count {
+  font-size: 0.72rem;
+}
+
+.team-cluster--xs .team-cluster-label {
+  max-width: 3rem;
+  font-size: 0.38rem;
+}
+
 .team-cluster--sm {
-  width: 3.15rem;
-  height: 3.15rem;
+  width: 2.625rem;
+  height: 2.625rem;
 }
 
 .team-cluster--md {
-  width: 3.55rem;
-  height: 3.55rem;
+  width: 3.375rem;
+  height: 3.375rem;
 }
 
 .team-cluster--lg {
@@ -211,16 +225,8 @@ body {
 }
 
 .team-cluster--xl {
-  width: 4.6rem;
-  height: 4.6rem;
-}
-
-.team-cluster--xl .team-cluster-count {
-  font-size: 0.78rem;
-}
-
-.team-cluster--xl .team-cluster-label {
-  font-size: 0.46rem;
+  width: 4.625rem;
+  height: 4.625rem;
 }
 
 .team-popup .leaflet-popup-content-wrapper {
