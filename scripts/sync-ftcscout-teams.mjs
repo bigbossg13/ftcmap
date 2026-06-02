@@ -3,32 +3,109 @@ import { dirname, resolve } from "node:path";
 
 const FTC_SCOUT_REST_TEAMS_URL =
   "https://api.ftcscout.org/rest/v1/teams/search?limit=30000";
+const FTC_SCOUT_GRAPHQL_URL = "https://api.ftcscout.org/graphql";
 const OUTPUT_PATH = resolve("public/ftcscout-teams.json");
 const KNOWN_NUMBERS_PATH = resolve("public/ftcscout-known-numbers.json");
 const USER_AGENT =
   process.env.FTCSCOUT_USER_AGENT ??
   "ftcmap/1.0 cache generator (https://github.com/bigbossg13/ftcmap)";
+const GRAPHQL_REGIONS = [
+  "International",
+  "CAAB",
+  "CABC",
+  "CAON",
+  "CAQC",
+  "USAK",
+  "USAL",
+  "USAR",
+  "USARL",
+  "USAZ",
+  "USCA",
+  "USCALA",
+  "USCALS",
+  "USCANO",
+  "USCASD",
+  "USCHS",
+  "USCO",
+  "USCT",
+  "USDE",
+  "USFL",
+  "USGA",
+  "USHI",
+  "USIA",
+  "USID",
+  "USIL",
+  "USIN",
+  "USKY",
+  "USLA",
+  "USMA",
+  "USMD",
+  "USMI",
+  "USMN",
+  "USMOKS",
+  "USMS",
+  "USMT",
+  "USNC",
+  "USND",
+  "USNE",
+  "USNH",
+  "USNJ",
+  "USNM",
+  "USNV",
+  "USNY",
+  "USNYEX",
+  "USNYLI",
+  "USNYNY",
+  "USOH",
+  "USOK",
+  "USOR",
+  "USPA",
+  "USRI",
+  "USSC",
+  "USTN",
+  "USTX",
+  "USTXCE",
+  "USTXHO",
+  "USTXNO",
+  "USTXSO",
+  "USTXWP",
+  "USUT",
+  "USVA",
+  "USVT",
+  "USWA",
+  "USWI",
+  "USWV",
+  "USWY",
+];
 
 const season = Number(process.env.FTC_EVENTS_SEASON ?? getCurrentFtcSeason());
 
-const allTeams = await fetchRestTeams();
+// Fetch team data and event participation in parallel.
+// REST gives us the full team roster with location/name/etc.
+// eventsSearch gives us the set of teams that actually competed —
+// activeSeasons alone is too loose (it includes registered-only teams).
+const [allTeams, playedTeamNumbers] = await Promise.all([
+  fetchRestTeams(),
+  fetchPlayedTeamNumbers(season),
+]);
 
+// Keep only teams that played in at least one FTCScout-tracked event.
 const cacheTeams = allTeams
-  .filter(
-    (team) =>
-      Array.isArray(team.activeSeasons) && team.activeSeasons.includes(season),
-  )
+  .filter((team) => playedTeamNumbers.has(team.number))
   .sort((a, b) => a.number - b.number);
+
+// All team numbers FTCScout has any record of (used by build-map-teams
+// to distinguish "FTCScout knows but didn't compete" from "truly untracked").
+const knownNumbers = allTeams.map((t) => t.number).sort((a, b) => a - b);
 
 const cache = {
   generatedAt: new Date().toISOString(),
   season,
   teamCount: cacheTeams.length,
-  filter: `active-${season}-teams`,
+  filter: `played-${season}-event-teams`,
   teams: cacheTeams,
 };
 
-const knownNumbers = allTeams.map((t) => t.number).sort((a, b) => a - b);
 const knownCache = {
   generatedAt: new Date().toISOString(),
   count: knownNumbers.length,
@@ -42,7 +119,7 @@ await writeFile(`${KNOWN_NUMBERS_PATH}.tmp`, `${JSON.stringify(knownCache)}\n`);
 await rename(`${KNOWN_NUMBERS_PATH}.tmp`, KNOWN_NUMBERS_PATH);
 
 console.log(
-  `Wrote ${cacheTeams.length.toLocaleString()} FTCScout active-${season} teams to ${OUTPUT_PATH}`,
+  `Wrote ${cacheTeams.length.toLocaleString()} FTCScout event-playing teams for ${season} to ${OUTPUT_PATH}`,
 );
 console.log(
   `Wrote ${knownNumbers.length.toLocaleString()} known FTCScout team numbers to ${KNOWN_NUMBERS_PATH}`,
@@ -58,6 +135,71 @@ async function fetchRestTeams() {
   }
 
   return normalizeRestTeams(await response.json());
+}
+
+async function fetchPlayedTeamNumbers(season) {
+  const eventQuery = `
+    query PlayedTeams($region: RegionOption!, $season: Int!, $limit: Int) {
+      eventsSearch(season: $season, region: $region, limit: $limit) {
+        teams {
+          teamNumber
+        }
+      }
+    }
+  `;
+
+  // Run all 63 region queries fully in parallel — each is independent and
+  // lightweight (just team numbers, no heavy per-team data). Retry logic in
+  // fetchGraphQl handles any transient 502s without serialising the batch.
+  const results = await Promise.all(
+    GRAPHQL_REGIONS.map((region) =>
+      fetchGraphQl(eventQuery, { region, season, limit: 10000 })
+        .then((payload) => payload.eventsSearch ?? [])
+        .catch((err) => {
+          console.warn(`Warning: eventsSearch for ${region} failed — ${err.message}`);
+          return [];
+        }),
+    ),
+  );
+
+  const teamNumbers = new Set();
+  for (const events of results.flat()) {
+    for (const team of events.teams ?? []) {
+      if (typeof team.teamNumber === "number") {
+        teamNumbers.add(team.teamNumber);
+      }
+    }
+  }
+  return teamNumbers;
+}
+
+async function fetchGraphQl(query, variables, attempt = 0) {
+  const response = await fetch(FTC_SCOUT_GRAPHQL_URL, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "User-Agent": USER_AGENT,
+    },
+    body: JSON.stringify({ query, variables }),
+  });
+
+  if ([429, 502, 503].includes(response.status) && attempt < 4) {
+    const delay = 1000 * 2 ** attempt;
+    await new Promise((r) => setTimeout(r, delay));
+    return fetchGraphQl(query, variables, attempt + 1);
+  }
+
+  if (!response.ok) {
+    throw new Error(`FTCScout GraphQL returned ${response.status}`);
+  }
+
+  const payload = await response.json();
+
+  if (payload.errors?.length) {
+    throw new Error(payload.errors.map((e) => e.message).join("; "));
+  }
+
+  return payload.data;
 }
 
 function normalizeRestTeams(teams) {
